@@ -90,9 +90,24 @@
       <p>I dati operativi sono salvati nel database SQLite locale <code>App/keep.sqlite</code>.</p>
       <label class="field-label" for="import-folder">Cartella da importare</label>
       <div class="folder-action"><input id="import-folder" placeholder="../Keep" autocomplete="off"><button type="button" id="import-button">Importa</button></div>
+      <label class="field-label" for="import-zip">Archivio ZIP da importare</label>
+      <div class="folder-action"><input id="import-zip" type="file" accept=".zip,application/zip"><button type="button" id="import-zip-button">Importa ZIP</button></div>
       <label class="field-label" for="export-folder">Cartella di esportazione</label>
       <div class="folder-action"><input id="export-folder" placeholder="../Keep-esportato" autocomplete="off"><button type="button" id="export-button">Esporta</button></div>
+      <label class="field-label" for="export-zip">File ZIP di esportazione</label>
+      <div class="folder-action"><input id="export-zip" placeholder="../Keep-esportato.zip" autocomplete="off"><button type="button" id="export-zip-button">Esporta ZIP</button></div>
       <p id="data-status" class="data-status" role="status"></p>
+    </form>
+  </dialog>
+  <dialog id="setup-dialog">
+    <form method="dialog" id="setup-form">
+      <header><strong>Inizia con Archivio note</strong></header>
+      <p>Il database e' vuoto. Vuoi importare un'esportazione Google Keep oppure iniziare con un archivio vuoto?</p>
+      <p id="setup-error" class="data-status" role="alert"></p>
+      <footer>
+        <button type="button" id="setup-empty" class="edit-note">Inizia vuoto</button>
+        <button type="button" id="setup-import" class="save-note">Importa note</button>
+      </footer>
     </form>
   </dialog>
   <div id="context-menu" role="menu" hidden></div>

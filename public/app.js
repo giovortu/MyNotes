@@ -21,7 +21,9 @@ const elements = {
   archivedInput: document.querySelector("#note-archived"), contextMenu: document.querySelector("#context-menu"),
   dataDialog: document.querySelector("#data-dialog"), dataStatus: document.querySelector("#data-status"),
   importFolder: document.querySelector("#import-folder"), exportFolder: document.querySelector("#export-folder"),
-  imageInput: document.querySelector("#image-input")
+  importZip: document.querySelector("#import-zip"), exportZip: document.querySelector("#export-zip"),
+  imageInput: document.querySelector("#image-input"), setupDialog: document.querySelector("#setup-dialog"),
+  setupError: document.querySelector("#setup-error")
 };
 
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
@@ -494,6 +496,24 @@ document.querySelector("#data-button").addEventListener("click", () => {
   elements.dataDialog.showModal();
 });
 document.querySelector("#close-data").addEventListener("click", () => elements.dataDialog.close());
+async function completeSetup(mode) {
+  const response = await fetch("/api/setup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode })
+  });
+  if (!response.ok) throw new Error(await response.text());
+}
+document.querySelector("#setup-empty").addEventListener("click", () => {
+  completeSetup("empty").then(() => elements.setupDialog.close()).catch((error) => { elements.setupError.textContent = error.message; });
+});
+document.querySelector("#setup-import").addEventListener("click", () => {
+  completeSetup("import").then(() => {
+    elements.setupDialog.close();
+    elements.dataStatus.textContent = "";
+    elements.dataDialog.showModal();
+  }).catch((error) => { elements.setupError.textContent = error.message; });
+});
 const columnCount = document.querySelector("#column-count");
 columnCount.value = state.maxColumns;
 document.documentElement.style.setProperty("--max-columns", state.maxColumns);
@@ -508,11 +528,13 @@ columnCount.addEventListener("change", () => {
 document.querySelector("#note-color").innerHTML = Object.keys(colors).map((color) => `<option value="${color}">${color === "DEFAULT" ? "Predefinito" : color}</option>`).join("");
 
 async function loadData() {
-  const [notes, order] = await Promise.all([
+  const [notes, order, status] = await Promise.all([
   fetch("/api/notes").then((response) => response.ok ? response.json() : Promise.reject(new Error("Impossibile caricare le note"))),
-  fetch("/api/order").then((response) => response.ok ? response.json() : Promise.reject(new Error("Impossibile caricare l'ordine delle note")))
+  fetch("/api/order").then((response) => response.ok ? response.json() : Promise.reject(new Error("Impossibile caricare l'ordine delle note"))),
+  fetch("/api/status").then((response) => response.ok ? response.json() : Promise.reject(new Error("Impossibile caricare lo stato iniziale")))
   ]);
   state.notes = notes; state.order = order; applyOrder(); renderLabels(); render();
+  if (!status.notes && !status.setupCompleted) elements.setupDialog.showModal();
 }
 
 async function transferData(action, folder) {
@@ -537,7 +559,46 @@ async function transferData(action, folder) {
   }
 }
 
+async function importZip() {
+  const file = elements.importZip.files[0];
+  if (!file) {
+    elements.dataStatus.textContent = "Seleziona un archivio ZIP.";
+    return;
+  }
+  elements.dataStatus.textContent = "Importazione ZIP in corso...";
+  const response = await fetch("/api/import/zip", {
+    method: "POST",
+    headers: { "Content-Type": file.type || "application/zip" },
+    body: file
+  });
+  const result = await response.text();
+  if (!response.ok) throw new Error(result);
+  const data = JSON.parse(result);
+  await loadData();
+  elements.dataStatus.textContent = `Importate ${data.imported} note (${data.skipped} file ignorati).`;
+}
+
+async function exportZip() {
+  const file = elements.exportZip.value.trim();
+  if (!file) {
+    elements.dataStatus.textContent = "Indica un file ZIP.";
+    return;
+  }
+  elements.dataStatus.textContent = "Esportazione ZIP in corso...";
+  const response = await fetch("/api/export/zip", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ file })
+  });
+  const result = await response.text();
+  if (!response.ok) throw new Error(result);
+  const data = JSON.parse(result);
+  elements.dataStatus.textContent = `Esportate ${data.exported} note, ${data.attachments} allegati e ${data.images || 0} immagini in ${data.file}.`;
+}
+
 document.querySelector("#import-button").addEventListener("click", () => transferData("import", elements.importFolder.value).catch((error) => { elements.dataStatus.textContent = error.message; }));
 document.querySelector("#export-button").addEventListener("click", () => transferData("export", elements.exportFolder.value).catch((error) => { elements.dataStatus.textContent = error.message; }));
+document.querySelector("#import-zip-button").addEventListener("click", () => importZip().catch((error) => { elements.dataStatus.textContent = error.message; }));
+document.querySelector("#export-zip-button").addEventListener("click", () => exportZip().catch((error) => { elements.dataStatus.textContent = error.message; }));
 
 loadData().catch((error) => { elements.empty.hidden = false; elements.empty.textContent = error.message; });

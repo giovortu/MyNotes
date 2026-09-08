@@ -1,1 +1,3 @@
 keep.sqlite*
+node_modules/*
+zip-imports/

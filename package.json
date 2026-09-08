@@ -5,5 +5,9 @@
   "description": "Local Google Keep Takeout viewer",
   "scripts": {
     "start": "node server.js"
+  },
+  "dependencies": {
+    "yauzl": "^3.4.0",
+    "yazl": "^3.3.1"
   }
 }

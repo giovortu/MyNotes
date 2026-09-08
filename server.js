@@ -2,14 +2,22 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { pipeline } = require("node:stream/promises");
+const { Transform } = require("node:stream");
 const { DatabaseSync } = require("node:sqlite");
+const yauzl = require("yauzl");
+const yazl = require("yazl");
 
 const appDir = __dirname;
 const defaultKeepDir = path.resolve(process.env.KEEP_DIR || path.join(appDir, "../Keep"));
 const databaseFile = path.resolve(process.env.DATABASE_FILE || path.join(appDir, "keep.sqlite"));
-const port = Number(process.env.PORT) || 3001;
+const port = Number(process.env.PORT) || 3000;
 const maxImageBytes = 5 * 1024 * 1024;
 const maxJsonBytes = 7 * 1024 * 1024;
+const maxZipBytes = 100 * 1024 * 1024;
+const maxZipExtractedBytes = 250 * 1024 * 1024;
+const maxZipEntries = 10000;
+const archiveStorageDir = path.resolve(process.env.ARCHIVE_STORAGE_DIR || path.join(path.dirname(databaseFile), "zip-imports"));
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -54,6 +62,10 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS note_images_note_index ON note_images(note_id);
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
 `);
 
 const statements = {
@@ -72,7 +84,9 @@ const statements = {
   imagesForNote: db.prepare("SELECT id, mime_type, bytes FROM note_images WHERE note_id = ? ORDER BY created_at ASC"),
   getImage: db.prepare("SELECT id, mime_type, bytes FROM note_images WHERE id = ?"),
   insertImage: db.prepare("INSERT INTO note_images (id, note_id, mime_type, bytes, created_at) VALUES (?, ?, ?, ?, ?)"),
-  clearImages: db.prepare("DELETE FROM note_images WHERE note_id = ?")
+  clearImages: db.prepare("DELETE FROM note_images WHERE note_id = ?"),
+  getSetting: db.prepare("SELECT value FROM app_settings WHERE key = ?"),
+  setSetting: db.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
 };
 
 function imageUrl(id) {
@@ -110,6 +124,14 @@ function loadOrder() {
   const order = { pinned: [], others: [] };
   for (const row of statements.allOrder.all()) order[row.pinned ? "pinned" : "others"].push(row.note_id);
   return order;
+}
+
+function setupCompleted() {
+  return statements.getSetting.get("setup-completed")?.value === "true";
+}
+
+function completeSetup() {
+  statements.setSetting.run("setup-completed", "true");
 }
 
 function noteRecord(raw, sourceFile, sourceDir, id = crypto.randomUUID()) {
@@ -381,6 +403,225 @@ function exportFolder(folder) {
   return { exported: statements.count.get().count, attachments, images, folder: targetDir };
 }
 
+function safeZipEntryPath(root, name) {
+  if (typeof name !== "string" || !name || name.includes("\0") || name.includes("\\") || name.startsWith("/") || path.posix.isAbsolute(name) || path.win32.isAbsolute(name)) {
+    throw new Error("L'archivio ZIP contiene un percorso non sicuro.");
+  }
+  const parts = name.split("/");
+  if (parts.some((part, index) => (part === "." || part === ".." || (!part && index !== parts.length - 1)))) {
+    throw new Error("L'archivio ZIP contiene un percorso non sicuro.");
+  }
+  const target = path.resolve(root, ...parts);
+  const relative = path.relative(root, target);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("L'archivio ZIP contiene un percorso non sicuro.");
+  return target;
+}
+
+function isUnsupportedZipEntry(entry) {
+  const madeByUnix = (entry.versionMadeBy >>> 8) === 3;
+  if (!madeByUnix) return false;
+  const type = (entry.externalFileAttributes >>> 16) & 0o170000;
+  return type !== 0 && type !== 0o040000 && type !== 0o100000;
+}
+
+function extractZip(zipFile, targetDir) {
+  return new Promise((resolve, reject) => {
+    yauzl.open(zipFile, { lazyEntries: true, validateFileName: true }, (openError, archive) => {
+      if (openError) return reject(new Error(`Archivio ZIP non valido: ${openError.message}`));
+      let settled = false;
+      let entries = 0;
+      let declaredExtractedBytes = 0;
+      let extractedBytes = 0;
+      const seenPaths = new Set();
+      const fail = (error) => {
+        if (settled) return;
+        settled = true;
+        try { archive.close(); } catch {}
+        reject(error);
+      };
+      archive.on("error", fail);
+      archive.on("entry", (entry) => {
+        try {
+          entries += 1;
+          if (entries > maxZipEntries) throw new Error(`L'archivio ZIP supera il limite di ${maxZipEntries} elementi.`);
+          if (isUnsupportedZipEntry(entry)) throw new Error("L'archivio ZIP contiene un tipo di file non supportato.");
+          const destination = safeZipEntryPath(targetDir, entry.fileName);
+          if (seenPaths.has(entry.fileName)) throw new Error("L'archivio ZIP contiene percorsi duplicati.");
+          seenPaths.add(entry.fileName);
+          if (!Number.isSafeInteger(entry.uncompressedSize) || entry.uncompressedSize < 0 || declaredExtractedBytes + entry.uncompressedSize > maxZipExtractedBytes) {
+            throw new Error("L'archivio ZIP supera il limite di dati estratti (250 MB).");
+          }
+          declaredExtractedBytes += entry.uncompressedSize;
+          if (entry.fileName.endsWith("/")) {
+            fs.mkdirSync(destination, { recursive: true });
+            archive.readEntry();
+            return;
+          }
+          fs.mkdirSync(path.dirname(destination), { recursive: true });
+          archive.openReadStream(entry, async (streamError, stream) => {
+            if (streamError) return fail(new Error(`Impossibile leggere l'archivio ZIP: ${streamError.message}`));
+            let written = 0;
+            const limit = new Transform({
+              transform(chunk, encoding, callback) {
+                if (written + chunk.length > entry.uncompressedSize || extractedBytes + chunk.length > maxZipExtractedBytes) {
+                  callback(new Error("L'archivio ZIP supera il limite di dati estratti (250 MB)."));
+                  return;
+                }
+                written += chunk.length;
+                extractedBytes += chunk.length;
+                callback(null, chunk);
+              }
+            });
+            try {
+              await pipeline(stream, limit, fs.createWriteStream(destination, { flags: "wx" }));
+              if (written !== entry.uncompressedSize) throw new Error("L'archivio ZIP è danneggiato.");
+              archive.readEntry();
+            } catch (error) {
+              fail(error);
+            }
+          });
+        } catch (error) {
+          fail(error);
+        }
+      });
+      archive.on("end", () => {
+        if (settled) return;
+        settled = true;
+        try { archive.close(); } catch {}
+        resolve();
+      });
+      archive.readEntry();
+    });
+  });
+}
+
+function receiveZip(request, destination) {
+  return new Promise((resolve, reject) => {
+    const contentLength = request.headers["content-length"];
+    if (contentLength !== undefined && (!/^\d+$/.test(contentLength) || Number(contentLength) > maxZipBytes)) {
+      request.resume();
+      return reject(new Error("L'archivio ZIP supera il limite di 100 MB."));
+    }
+    const hash = crypto.createHash("sha256");
+    const output = fs.createWriteStream(destination, { flags: "wx" });
+    let received = 0;
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      request.unpipe(output);
+      output.destroy();
+      request.resume();
+      reject(error);
+    };
+    request.on("data", (chunk) => {
+      received += chunk.length;
+      if (received > maxZipBytes) return fail(new Error("L'archivio ZIP supera il limite di 100 MB."));
+      hash.update(chunk);
+    });
+    request.on("aborted", () => fail(new Error("Caricamento dell'archivio ZIP interrotto.")));
+    request.on("error", fail);
+    output.on("error", fail);
+    output.on("finish", () => {
+      if (settled) return;
+      settled = true;
+      resolve(hash.digest("hex"));
+    });
+    request.pipe(output);
+  });
+}
+
+function createZip(sourceDir, destination) {
+  return new Promise((resolve, reject) => {
+    const archive = new yazl.ZipFile();
+    const output = fs.createWriteStream(destination, { flags: "wx" });
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      output.destroy();
+      reject(error);
+    };
+    archive.outputStream.on("error", fail);
+    output.on("error", fail);
+    output.on("close", () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    });
+    try {
+      for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+        if (!entry.isFile()) throw new Error(`File di esportazione non valido: ${entry.name}`);
+        archive.addFile(path.join(sourceDir, entry.name), entry.name);
+      }
+      archive.outputStream.pipe(output);
+      archive.end();
+    } catch (error) {
+      fail(error);
+    }
+  });
+}
+
+function completeImport(folder) {
+  const result = importFolder(folder);
+  migrateAttachmentImages();
+  return result;
+}
+
+async function importZip(request) {
+  fs.mkdirSync(archiveStorageDir, { recursive: true });
+  const token = crypto.randomUUID();
+  const uploadFile = path.join(archiveStorageDir, `.upload-${token}.zip`);
+  let extractionDir = path.join(archiveStorageDir, `.extract-${token}`);
+  let sourceDir;
+  let createdSource = false;
+  try {
+    const hash = await receiveZip(request, uploadFile);
+    fs.mkdirSync(extractionDir);
+    await extractZip(uploadFile, extractionDir);
+    sourceDir = path.join(archiveStorageDir, hash);
+    if (fs.existsSync(sourceDir)) {
+      fs.rmSync(extractionDir, { recursive: true, force: true });
+    } else {
+      try {
+        fs.renameSync(extractionDir, sourceDir);
+        extractionDir = "";
+        createdSource = true;
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error;
+        fs.rmSync(extractionDir, { recursive: true, force: true });
+      }
+    }
+    return completeImport(sourceDir);
+  } catch (error) {
+    if (createdSource && sourceDir) fs.rmSync(sourceDir, { recursive: true, force: true });
+    throw error;
+  } finally {
+    fs.rmSync(uploadFile, { force: true });
+    if (extractionDir) fs.rmSync(extractionDir, { recursive: true, force: true });
+  }
+}
+
+async function exportZip(file) {
+  const targetFile = path.resolve(file);
+  if (path.extname(targetFile).toLowerCase() !== ".zip") throw new Error("Il file di esportazione deve terminare con .zip.");
+  if (fs.existsSync(targetFile) && fs.statSync(targetFile).isDirectory()) throw new Error("Il percorso di esportazione indica una cartella.");
+  const targetDir = path.dirname(targetFile);
+  fs.mkdirSync(targetDir, { recursive: true });
+  const token = crypto.randomUUID();
+  const exportDir = fs.mkdtempSync(path.join(targetDir, ".keep-export-"));
+  const temporaryZip = path.join(targetDir, `.keep-export-${token}.zip`);
+  try {
+    const { folder, ...result } = exportFolder(exportDir);
+    await createZip(exportDir, temporaryZip);
+    fs.renameSync(temporaryZip, targetFile);
+    return { ...result, file: targetFile };
+  } finally {
+    fs.rmSync(exportDir, { recursive: true, force: true });
+    fs.rmSync(temporaryZip, { force: true });
+  }
+}
+
 function readJson(request, maxBytes = maxJsonBytes) {
   return new Promise((resolve, reject) => {
     let body = "";
@@ -427,10 +668,6 @@ function serveFile(response, root, requestedPath) {
   fs.createReadStream(file).pipe(response);
 }
 
-if (statements.count.get().count === 0) {
-  importFolder(defaultKeepDir);
-  migrateLegacyOrder();
-}
 migrateAttachmentImages();
 
 http.createServer(async (request, response) => {
@@ -438,6 +675,13 @@ http.createServer(async (request, response) => {
   try {
     if (request.method === "GET" && url.pathname === "/api/notes") return sendJson(response, 200, loadNotes());
     if (request.method === "GET" && url.pathname === "/api/order") return sendJson(response, 200, loadOrder());
+    if (request.method === "GET" && url.pathname === "/api/status") return sendJson(response, 200, { notes: statements.count.get().count, setupCompleted: setupCompleted() });
+    if (request.method === "POST" && url.pathname === "/api/setup") {
+      const input = await readJson(request);
+      if (!input || !["empty", "import"].includes(input.mode)) throw new Error("Scelta iniziale non valida.");
+      completeSetup();
+      return sendJson(response, 200, { setupCompleted: true });
+    }
     if (request.method === "POST" && url.pathname === "/api/notes") {
       const raw = cleanNote(await readJson(request));
       const sourceFile = `${new Date().toISOString().replace(/[:.]/g, "_")}.json`;
@@ -465,12 +709,24 @@ http.createServer(async (request, response) => {
     if (request.method === "POST" && url.pathname === "/api/import") {
       const input = await readJson(request);
       if (!input || typeof input.folder !== "string" || !input.folder.trim()) throw new Error("Indica una cartella da importare.");
-      return sendJson(response, 200, importFolder(input.folder));
+      const result = completeImport(input.folder);
+      completeSetup();
+      return sendJson(response, 200, result);
+    }
+    if (request.method === "POST" && url.pathname === "/api/import/zip") {
+      const result = await importZip(request);
+      completeSetup();
+      return sendJson(response, 200, result);
     }
     if (request.method === "POST" && url.pathname === "/api/export") {
       const input = await readJson(request);
       if (!input || typeof input.folder !== "string" || !input.folder.trim()) throw new Error("Indica una cartella di esportazione.");
       return sendJson(response, 200, exportFolder(input.folder));
+    }
+    if (request.method === "POST" && url.pathname === "/api/export/zip") {
+      const input = await readJson(request);
+      if (!input || typeof input.file !== "string" || !input.file.trim()) throw new Error("Indica un file ZIP di esportazione.");
+      return sendJson(response, 200, await exportZip(input.file));
     }
     if (request.method === "GET" && /^\/api\/images\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(url.pathname)) {
       const image = statements.getImage.get(url.pathname.split("/").pop());

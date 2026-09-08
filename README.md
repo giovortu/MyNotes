@@ -9,6 +9,7 @@ Richiede una versione di Node.js che includa `node:sqlite`.
 
 ```bash
 cd App
+npm ci
 npm start
 ```
 
@@ -27,18 +28,20 @@ Costruisci l'immagine dalla cartella `App`:
 docker build -t archivio-note .
 ```
 
-Avviala montando una cartella Keep da importare e un volume persistente per il
-database:
+Avviala con un volume persistente per il database:
 
 ```bash
 docker run --rm -p 3000:3000 \
-  -v "$PWD/../Keep:/keep:ro" \
   -v archivio-note-data:/data \
   archivio-note
 ```
 
-`/data/keep.sqlite` conserva le modifiche tra i riavvii. La cartella montata
-in `/keep` viene letta solo al primo avvio, quando il database e' vuoto.
+`/data/keep.sqlite` conserva le modifiche tra i riavvii. Al primo avvio, con
+database vuoto, l'app chiede se importare una cartella Google Keep o iniziare
+con un archivio vuoto.
+L'immagine installa anche le dipendenze ZIP con `npm ci`; gli archivi importati
+mantengono i loro allegati in `/data/zip-imports`, quindi anche questi restano
+disponibili grazie al volume persistente.
 
 In alternativa, dalla cartella `App`, avvia direttamente:
 
@@ -54,6 +57,14 @@ docker compose up --build
   viene prodotto durante l'esportazione ed e' solo un elenco di supporto.
 - L'importazione legge i file JSON da una cartella. L'esportazione crea JSON,
   allegati e immagini nella cartella scelta.
+- Il dialog **Importa ed esporta** supporta anche archivi ZIP: scegli un file
+  locale dal browser per importarlo oppure indica sul filesystem del server un
+  percorso che termini in `.zip` per esportare. Il contenuto ZIP è lo stesso
+  prodotto dall'esportazione in cartella, comprese immagini BLOB convertite
+  tramite `appImages` e allegati.
+- Gli ZIP importati sono limitati a 100 MB, 10.000 elementi e 250 MB estratti;
+  percorsi non sicuri e tipi di file non supportati vengono rifiutati. Le
+  estrazioni temporanee vengono rimosse al termine.
 
 ## Cronologia delle modifiche
 
@@ -94,3 +105,15 @@ docker compose up --build
   `appImages` ai JSON delle note.
 - L'importazione legge quel manifest, salva di nuovo i file come BLOB nel
   database e sostituisce i riferimenti portabili con gli URL locali corretti.
+- Aggiunte importazione da un file ZIP selezionato nel browser ed esportazione
+  ZIP verso un percorso del server, con controlli contro zip-slip e limiti di
+  dimensione.
+
+#### Primo avvio e container
+
+- Rimossa l'importazione automatica della cartella `Keep`.
+- Al primo avvio di un database vuoto viene mostrato un popup che consente di
+  scegliere tra importazione manuale e archivio inizialmente vuoto. La scelta
+  e' memorizzata nel database.
+- Aggiunti `Dockerfile` e `compose.yaml`: il container conserva soltanto il
+  volume SQLite e non richiede il montaggio della cartella `../Keep`.

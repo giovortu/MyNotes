@@ -177,6 +177,11 @@ dialog { border-radius: 20px; box-shadow: 0 20px 60px #12111f66; }
 #data-form { padding-bottom: 18px; }
 #data-form header { position: static; height: auto; border: 0; padding: 16px 20px 8px; justify-content: space-between; background: #fff; color: #272534; box-shadow: none; }
 #data-form > p { margin: 8px 20px 14px; color: #636170; line-height: 1.55; }
+#setup-dialog { width: min(500px, calc(100vw - 32px)); background: #fff; }
+#setup-form { padding-bottom: 18px; }
+#setup-form header { position: static; height: auto; border: 0; padding: 20px 20px 8px; background: #fff; color: #272534; box-shadow: none; }
+#setup-form > p { margin: 8px 20px 14px; color: #636170; line-height: 1.55; }
+#setup-form footer { display: flex; justify-content: flex-end; gap: 8px; padding: 6px 20px; }
 #data-form code { border-radius: 4px; background: #f0edff; color: #5f45c7; padding: 2px 4px; }
 .folder-action { display: flex; gap: 8px; padding: 6px 20px 8px; }
 .folder-action input { min-width: 0; flex: 1; border: 1px solid #dedbe9; border-radius: 8px; padding: 9px 10px; outline-color: #7657ff; }
