@@ -758,4 +758,4 @@ http.createServer(async (request, response) => {
     console.error(error);
     send(response, 400, "text/plain; charset=utf-8", error.message);
   }
-}).listen(port, "0.0.0.0", () => console.log(`Archivio note: http://localhost:${port} (${statements.count.get().count} note)`));
+}).listen(port, "0.0.0.0", () => console.log(`Archivio note (${statements.count.get().count} note)`));
