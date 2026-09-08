@@ -67,7 +67,7 @@
         <button type="button" data-command="italic" title="Corsivo"><em>I</em></button>
         <button type="button" data-command="underline" title="Sottolineato"><u>U</u></button>
         <button type="button" data-command="insertUnorderedList" title="Elenco puntato">•≡</button>
-        <button type="button" data-command="insertOrderedList" title="Elenco numerato">1≡</button>
+        <button type="button" data-command="insertOrderedList" title="Elenco numerato" aria-label="Elenco numerato">1.</button>
         <button type="button" data-command="removeFormat" title="Rimuovi formattazione">Tx</button>
         <button type="button" id="insert-image" title="Inserisci immagine" aria-label="Inserisci immagine">🖼</button>
       </div>
@@ -88,11 +88,10 @@
   <dialog id="data-dialog">
     <form id="data-form">
       <header><strong>Importa ed esporta</strong><button type="button" id="close-data" class="editor-close" aria-label="Chiudi">×</button></header>
-      <p>I dati operativi sono salvati nel database SQLite locale <code>App/keep.sqlite</code>.</p>
+      <p>I dati operativi sono salvati nel database SQLite locale.</p>
       <label class="field-label" for="import-zip">Archivio ZIP da importare</label>
       <div class="folder-action"><input id="import-zip" type="file" accept=".zip,application/zip"><button type="button" id="import-zip-button">Importa ZIP</button></div>
-      <label class="field-label" for="export-zip">File ZIP di esportazione</label>
-      <div class="folder-action"><input id="export-zip" placeholder="../Keep-esportato.zip" autocomplete="off"><button type="button" id="export-zip-button">Esporta ZIP</button></div>
+      <div class="folder-action"><button type="button" id="export-zip-button">Esporta ZIP</button></div>
       <p id="data-status" class="data-status" role="status"></p>
     </form>
   </dialog>
@@ -104,6 +103,16 @@
       <footer>
         <button type="button" id="setup-empty" class="edit-note">Inizia vuoto</button>
         <button type="button" id="setup-import" class="save-note">Importa note</button>
+      </footer>
+    </form>
+  </dialog>
+  <dialog id="confirmation-dialog">
+    <form method="dialog" id="confirmation-form">
+      <header><strong id="confirmation-title">Conferma azione</strong></header>
+      <p id="confirmation-message"></p>
+      <footer>
+        <button id="confirmation-cancel" value="cancel" class="edit-note">Annulla</button>
+        <button id="confirmation-submit" value="confirm" class="save-note">Conferma</button>
       </footer>
     </form>
   </dialog>

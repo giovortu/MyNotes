@@ -604,23 +604,17 @@ async function importZip(request) {
   }
 }
 
-async function exportZip(file) {
-  const targetFile = path.resolve(file);
-  if (path.extname(targetFile).toLowerCase() !== ".zip") throw new Error("Il file di esportazione deve terminare con .zip.");
-  if (fs.existsSync(targetFile) && fs.statSync(targetFile).isDirectory()) throw new Error("Il percorso di esportazione indica una cartella.");
-  const targetDir = path.dirname(targetFile);
-  fs.mkdirSync(targetDir, { recursive: true });
-  const token = crypto.randomUUID();
-  const exportDir = fs.mkdtempSync(path.join(targetDir, ".keep-export-"));
-  const temporaryZip = path.join(targetDir, `.keep-export-${token}.zip`);
+async function exportZip() {
+  fs.mkdirSync(archiveStorageDir, { recursive: true });
+  const exportDir = fs.mkdtempSync(path.join(archiveStorageDir, ".keep-export-"));
+  const zipFile = path.join(exportDir, "archivio-note.zip");
   try {
-    const { folder, ...result } = exportFolder(exportDir);
-    await createZip(exportDir, temporaryZip);
-    fs.renameSync(temporaryZip, targetFile);
-    return { ...result, file: targetFile };
-  } finally {
+    exportFolder(exportDir);
+    await createZip(exportDir, zipFile);
+    return zipFile;
+  } catch (error) {
     fs.rmSync(exportDir, { recursive: true, force: true });
-    fs.rmSync(temporaryZip, { force: true });
+    throw error;
   }
 }
 
@@ -661,6 +655,24 @@ function sendImage(response, image) {
     "X-Content-Type-Options": "nosniff"
   });
   response.end(image.bytes);
+}
+
+function sendZip(response, zipFile) {
+  const cleanup = () => fs.rmSync(path.dirname(zipFile), { recursive: true, force: true });
+  const stream = fs.createReadStream(zipFile);
+  response.writeHead(200, {
+    "Content-Type": "application/zip",
+    "Content-Length": fs.statSync(zipFile).size,
+    "Content-Disposition": 'attachment; filename="archivio-note.zip"',
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff"
+  });
+  stream.on("error", (error) => {
+    cleanup();
+    response.destroy(error);
+  });
+  response.on("close", cleanup);
+  stream.pipe(response);
 }
 
 function serveFile(response, root, requestedPath) {
@@ -723,10 +735,9 @@ http.createServer(async (request, response) => {
       completeSetup();
       return sendJson(response, 200, result);
     }
-    if (request.method === "POST" && url.pathname === "/api/export/zip") {
-      const input = await readJson(request);
-      if (!input || typeof input.file !== "string" || !input.file.trim()) throw new Error("Indica un file ZIP di esportazione.");
-      return sendJson(response, 200, await exportZip(input.file));
+    if (request.method === "GET" && url.pathname === "/api/export/zip") {
+      sendZip(response, await exportZip());
+      return;
     }
     if (request.method === "GET" && /^\/api\/images\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(url.pathname)) {
       const image = statements.getImage.get(url.pathname.split("/").pop());
@@ -747,4 +758,4 @@ http.createServer(async (request, response) => {
     console.error(error);
     send(response, 400, "text/plain; charset=utf-8", error.message);
   }
-}).listen(port, "0.0.0.0", () => console.log(`Archivio note: (${statements.count.get().count} note)`));
+}).listen(port, "0.0.0.0", () => console.log(`Archivio note: http://localhost:${port} (${statements.count.get().count} note)`));

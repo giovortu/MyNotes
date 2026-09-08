@@ -21,14 +21,32 @@ const elements = {
   colorInput: document.querySelector("#note-color"), pinnedInput: document.querySelector("#note-pinned"),
   archivedInput: document.querySelector("#note-archived"), contextMenu: document.querySelector("#context-menu"),
   dataDialog: document.querySelector("#data-dialog"), dataStatus: document.querySelector("#data-status"),
-  importZip: document.querySelector("#import-zip"), exportZip: document.querySelector("#export-zip"),
+  importZip: document.querySelector("#import-zip"),
   imageInput: document.querySelector("#image-input"), setupDialog: document.querySelector("#setup-dialog"),
-  setupError: document.querySelector("#setup-error")
+  setupError: document.querySelector("#setup-error"), confirmationDialog: document.querySelector("#confirmation-dialog"),
+  confirmationTitle: document.querySelector("#confirmation-title"), confirmationMessage: document.querySelector("#confirmation-message"),
+  confirmationCancel: document.querySelector("#confirmation-cancel"), confirmationSubmit: document.querySelector("#confirmation-submit")
 };
 
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
 const lines = (value) => escapeHtml(value).replace(/\n/g, "<br>");
 const date = (microseconds) => new Intl.DateTimeFormat("it-IT", { dateStyle: "medium" }).format(new Date(microseconds / 1000));
+
+function openConfirmation({ title, message, confirmLabel = "Conferma", cancellable = true }) {
+  elements.confirmationTitle.textContent = title;
+  elements.confirmationMessage.textContent = message;
+  elements.confirmationCancel.hidden = !cancellable;
+  elements.confirmationSubmit.textContent = confirmLabel;
+  elements.confirmationSubmit.value = cancellable ? "confirm" : "close";
+  elements.confirmationDialog.showModal();
+  return new Promise((resolve) => {
+    elements.confirmationDialog.addEventListener("close", () => resolve(elements.confirmationDialog.returnValue === "confirm"), { once: true });
+  });
+}
+
+function showError(message) {
+  openConfirmation({ title: "Operazione non riuscita", message, confirmLabel: "Chiudi", cancellable: false });
+}
 
 function visibleNotes() {
   const query = state.query.toLocaleLowerCase();
@@ -223,13 +241,18 @@ function openContextMenu(note, x, y) {
     let changes;
     if (button.dataset.action === "top") {
       closeContextMenu();
-      moveToTop(note).catch(() => alert("Impossibile spostare la nota in cima."));
+      moveToTop(note).catch(() => showError("Impossibile spostare la nota in cima."));
       return;
     }
     if (button.dataset.action === "trash" && note.isTrashed) {
       closeContextMenu();
-      if (!window.confirm("Eliminare definitivamente questa nota? L'operazione non può essere annullata.")) return;
-      deleteNotePermanently(note).catch(() => alert("Impossibile eliminare definitivamente la nota."));
+      openConfirmation({
+        title: "Eliminare definitivamente?",
+        message: "Questa nota verrà eliminata definitivamente e l'operazione non potrà essere annullata.",
+        confirmLabel: "Elimina"
+      }).then((confirmed) => {
+        if (confirmed) deleteNotePermanently(note).catch(() => showError("Impossibile eliminare definitivamente la nota."));
+      });
       return;
     }
     if (button.dataset.action === "pinned") changes = { isPinned: !note.isPinned };
@@ -238,7 +261,7 @@ function openContextMenu(note, x, y) {
     if (button.dataset.color) changes = { color: button.dataset.color };
     if (!changes) return;
     closeContextMenu();
-    updateNote(note, changes).catch(() => alert("Impossibile aggiornare la nota."));
+    updateNote(note, changes).catch(() => showError("Impossibile aggiornare la nota."));
   };
 }
 
@@ -292,13 +315,19 @@ function openNote(note) {
   });
   elements.detail.querySelector(".trash-note").addEventListener("click", () => {
     if (note.isTrashed) {
-      if (!window.confirm("Eliminare definitivamente questa nota? L'operazione non può essere annullata.")) return;
-      elements.dialog.close();
-      deleteNotePermanently(note).catch(() => alert("Impossibile eliminare definitivamente la nota."));
+      openConfirmation({
+        title: "Eliminare definitivamente?",
+        message: "Questa nota verrà eliminata definitivamente e l'operazione non potrà essere annullata.",
+        confirmLabel: "Elimina"
+      }).then((confirmed) => {
+        if (!confirmed) return;
+        elements.dialog.close();
+        deleteNotePermanently(note).catch(() => showError("Impossibile eliminare definitivamente la nota."));
+      });
       return;
     }
     elements.dialog.close();
-    updateNote(note, { isTrashed: true }).catch(() => alert("Impossibile spostare la nota nel cestino."));
+    updateNote(note, { isTrashed: true }).catch(() => showError("Impossibile spostare la nota nel cestino."));
   });
   elements.dialog.showModal();
 }
@@ -468,8 +497,13 @@ document.querySelector("#menu-button").addEventListener("click", () => document.
 document.querySelector("#close-dialog").addEventListener("click", () => elements.dialog.close());
 document.querySelector("#new-note").addEventListener("click", () => openEditor());
 elements.emptyTrash.addEventListener("click", () => {
-  if (!window.confirm("Svuotare il cestino? Tutte le note cestinate verranno eliminate definitivamente.")) return;
-  emptyTrash().catch(() => alert("Impossibile svuotare il cestino."));
+  openConfirmation({
+    title: "Svuotare il cestino?",
+    message: "Tutte le note cestinate verranno eliminate definitivamente e l'operazione non potrà essere annullata.",
+    confirmLabel: "Svuota cestino"
+  }).then((confirmed) => {
+    if (confirmed) emptyTrash().catch(() => showError("Impossibile svuotare il cestino."));
+  });
 });
 document.querySelector("#close-editor").addEventListener("click", () => elements.editor.close());
 elements.form.addEventListener("submit", (event) => saveNote(event).catch(() => { elements.saveError.textContent = "Errore di connessione durante il salvataggio."; }));
@@ -601,21 +635,18 @@ async function importZip() {
 }
 
 async function exportZip() {
-  const file = elements.exportZip.value.trim();
-  if (!file) {
-    elements.dataStatus.textContent = "Indica un file ZIP.";
-    return;
-  }
   elements.dataStatus.textContent = "Esportazione ZIP in corso...";
-  const response = await fetch("/api/export/zip", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ file })
-  });
-  const result = await response.text();
-  if (!response.ok) throw new Error(result);
-  const data = JSON.parse(result);
-  elements.dataStatus.textContent = `Esportate ${data.exported} note, ${data.attachments} allegati e ${data.images || 0} immagini in ${data.file}.`;
+  const response = await fetch("/api/export/zip");
+  if (!response.ok) throw new Error(await response.text());
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "archivio-note.zip";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  elements.dataStatus.textContent = "Download dell'archivio ZIP avviato.";
 }
 
 document.querySelector("#import-zip-button").addEventListener("click", () => importZip().catch((error) => { elements.dataStatus.textContent = error.message; }));

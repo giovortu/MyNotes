@@ -56,9 +56,9 @@ docker compose up --build
 - Le label sono contenute nei dati delle singole note. Il file `Labels.txt`
   viene prodotto durante l'esportazione ed e' solo un elenco di supporto.
 - Il dialog **Importa ed esporta** gestisce esclusivamente archivi ZIP: scegli
-  un file locale dal browser per importarlo oppure indica sul filesystem del
-  server un percorso che termini in `.zip` per esportare. L'archivio contiene
-  JSON, allegati e immagini BLOB convertite tramite `appImages`.
+  un file locale dal browser per importarlo oppure scarica un archivio ZIP
+  per esportare. L'archivio contiene JSON, allegati e immagini BLOB convertite
+  tramite `appImages`.
 - Gli ZIP importati sono limitati a 100 MB, 10.000 elementi e 250 MB estratti;
   percorsi non sicuri e tipi di file non supportati vengono rifiutati. Le
   estrazioni temporanee vengono rimosse al termine.
@@ -89,11 +89,14 @@ docker compose up --build
 - Nel Cestino è possibile svuotare tutti gli elementi oppure eliminarli
   definitivamente singolarmente dal menu contestuale o dalla preview.
 - L'azione **Svuota cestino** è visibile solo nella sezione Cestino; ogni
-  cancellazione definitiva richiede una conferma.
+  cancellazione definitiva richiede una conferma in un popup modale.
+- L'header dell'editor, compreso il pulsante di chiusura, resta fisso durante
+  lo scorrimento della nota.
 
 #### Immagini nelle note
 
 - Aggiunto il pulsante di inserimento immagini nell'editor rich text.
+- L'editor supporta anche gli elenchi numerati tramite il pulsante **1.**.
 - Sono accettate immagini PNG, JPEG, GIF e WebP fino a 5 MB.
 - Le immagini vengono salvate come BLOB nella tabella SQLite `note_images`,
   collegate alla nota tramite il relativo identificatore.
@@ -109,7 +112,7 @@ docker compose up --build
 - L'importazione legge quel manifest, salva di nuovo i file come BLOB nel
   database e sostituisce i riferimenti portabili con gli URL locali corretti.
 - Aggiunte importazione da un file ZIP selezionato nel browser ed esportazione
-  ZIP verso un percorso del server, con controlli contro zip-slip e limiti di
+  ZIP tramite download del browser, con controlli contro zip-slip e limiti di
   dimensione.
 - Rimosse le azioni e gli endpoint pubblici per importare o esportare
   direttamente cartelle: lo ZIP è l'unico formato di scambio disponibile.

@@ -152,6 +152,10 @@ h2 { margin-bottom: 10px; font-size: 16px; font-weight: 700; letter-spacing: -.2
   min-height: 0;
   overflow: hidden;
 }
+.note-footer {
+  flex: none;
+  margin-top: auto;
+}
 .note-content > .text {
   display: -webkit-box;
   overflow: hidden;
@@ -185,12 +189,17 @@ dialog { border-radius: 20px; box-shadow: 0 20px 60px #12111f66; }
 #setup-form header { position: static; height: auto; border: 0; padding: 20px 20px 8px; background: #fff; color: #272534; box-shadow: none; }
 #setup-form > p { margin: 8px 20px 14px; color: #636170; line-height: 1.55; }
 #setup-form footer { display: flex; justify-content: flex-end; gap: 8px; padding: 6px 20px; }
+#confirmation-dialog { width: min(430px, calc(100vw - 32px)); background: #fff; }
+#confirmation-form { padding-bottom: 18px; }
+#confirmation-form header { position: static; height: auto; border: 0; padding: 20px 20px 8px; background: #fff; color: #272534; box-shadow: none; }
+#confirmation-form > p { margin: 8px 20px 18px; color: #636170; line-height: 1.55; }
+#confirmation-form footer { display: flex; justify-content: flex-end; gap: 8px; padding: 6px 20px; }
 #data-form code { border-radius: 4px; background: #f0edff; color: #5f45c7; padding: 2px 4px; }
 .folder-action { display: flex; gap: 8px; padding: 6px 20px 8px; }
 .folder-action input { min-width: 0; flex: 1; border: 1px solid #dedbe9; border-radius: 8px; padding: 9px 10px; outline-color: #7657ff; }
 .folder-action button { border: 0; border-radius: 8px; background: #eae6ff; color: #553bbd; cursor: pointer; font-weight: 700; padding: 8px 12px; }
 .data-status { min-height: 21px; font-size: 12px; }
-#note-form header { color: #272534; background: #fff; box-shadow: none; }
+#note-form header { position: sticky; top: 0; z-index: 3; color: #272534; background: #fff; box-shadow: none; }
 #note-form > input, #note-form textarea { color: #353441; }
 #note-form textarea { line-height: 1.55; }
 .editor-options { border-color: #ebeaf1; background: #fbfaff; }
