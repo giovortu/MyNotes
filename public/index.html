@@ -88,12 +88,8 @@
     <form id="data-form">
       <header><strong>Importa ed esporta</strong><button type="button" id="close-data" class="editor-close" aria-label="Chiudi">×</button></header>
       <p>I dati operativi sono salvati nel database SQLite locale <code>App/keep.sqlite</code>.</p>
-      <label class="field-label" for="import-folder">Cartella da importare</label>
-      <div class="folder-action"><input id="import-folder" placeholder="../Keep" autocomplete="off"><button type="button" id="import-button">Importa</button></div>
       <label class="field-label" for="import-zip">Archivio ZIP da importare</label>
       <div class="folder-action"><input id="import-zip" type="file" accept=".zip,application/zip"><button type="button" id="import-zip-button">Importa ZIP</button></div>
-      <label class="field-label" for="export-folder">Cartella di esportazione</label>
-      <div class="folder-action"><input id="export-folder" placeholder="../Keep-esportato" autocomplete="off"><button type="button" id="export-button">Esporta</button></div>
       <label class="field-label" for="export-zip">File ZIP di esportazione</label>
       <div class="folder-action"><input id="export-zip" placeholder="../Keep-esportato.zip" autocomplete="off"><button type="button" id="export-zip-button">Esporta ZIP</button></div>
       <p id="data-status" class="data-status" role="status"></p>

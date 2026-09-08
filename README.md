@@ -37,8 +37,8 @@ docker run --rm -p 3000:3000 \
 ```
 
 `/data/keep.sqlite` conserva le modifiche tra i riavvii. Al primo avvio, con
-database vuoto, l'app chiede se importare una cartella Google Keep o iniziare
-con un archivio vuoto.
+database vuoto, l'app chiede se importare un archivio ZIP o iniziare con un
+archivio vuoto.
 L'immagine installa anche le dipendenze ZIP con `npm ci`; gli archivi importati
 mantengono i loro allegati in `/data/zip-imports`, quindi anche questi restano
 disponibili grazie al volume persistente.
@@ -55,13 +55,10 @@ docker compose up --build
   `App/keep.sqlite`.
 - Le label sono contenute nei dati delle singole note. Il file `Labels.txt`
   viene prodotto durante l'esportazione ed e' solo un elenco di supporto.
-- L'importazione legge i file JSON da una cartella. L'esportazione crea JSON,
-  allegati e immagini nella cartella scelta.
-- Il dialog **Importa ed esporta** supporta anche archivi ZIP: scegli un file
-  locale dal browser per importarlo oppure indica sul filesystem del server un
-  percorso che termini in `.zip` per esportare. Il contenuto ZIP è lo stesso
-  prodotto dall'esportazione in cartella, comprese immagini BLOB convertite
-  tramite `appImages` e allegati.
+- Il dialog **Importa ed esporta** gestisce esclusivamente archivi ZIP: scegli
+  un file locale dal browser per importarlo oppure indica sul filesystem del
+  server un percorso che termini in `.zip` per esportare. L'archivio contiene
+  JSON, allegati e immagini BLOB convertite tramite `appImages`.
 - Gli ZIP importati sono limitati a 100 MB, 10.000 elementi e 250 MB estratti;
   percorsi non sicuri e tipi di file non supportati vengono rifiutati. Le
   estrazioni temporanee vengono rimosse al termine.
@@ -108,6 +105,8 @@ docker compose up --build
 - Aggiunte importazione da un file ZIP selezionato nel browser ed esportazione
   ZIP verso un percorso del server, con controlli contro zip-slip e limiti di
   dimensione.
+- Rimosse le azioni e gli endpoint pubblici per importare o esportare
+  direttamente cartelle: lo ZIP è l'unico formato di scambio disponibile.
 
 #### Primo avvio e container
 

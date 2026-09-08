@@ -706,22 +706,10 @@ http.createServer(async (request, response) => {
       return sendJson(response, 200, normalizeNote(raw, saved));
     }
     if (request.method === "PUT" && url.pathname === "/api/order") return sendJson(response, 200, setOrder(await readJson(request)));
-    if (request.method === "POST" && url.pathname === "/api/import") {
-      const input = await readJson(request);
-      if (!input || typeof input.folder !== "string" || !input.folder.trim()) throw new Error("Indica una cartella da importare.");
-      const result = completeImport(input.folder);
-      completeSetup();
-      return sendJson(response, 200, result);
-    }
     if (request.method === "POST" && url.pathname === "/api/import/zip") {
       const result = await importZip(request);
       completeSetup();
       return sendJson(response, 200, result);
-    }
-    if (request.method === "POST" && url.pathname === "/api/export") {
-      const input = await readJson(request);
-      if (!input || typeof input.folder !== "string" || !input.folder.trim()) throw new Error("Indica una cartella di esportazione.");
-      return sendJson(response, 200, exportFolder(input.folder));
     }
     if (request.method === "POST" && url.pathname === "/api/export/zip") {
       const input = await readJson(request);
@@ -747,4 +735,4 @@ http.createServer(async (request, response) => {
     console.error(error);
     send(response, 400, "text/plain; charset=utf-8", error.message);
   }
-}).listen(port, "0.0.0.0", () => console.log(`Archivio note: http://localhost:${port} (${statements.count.get().count} note)`));
+}).listen(port, "0.0.0.0", () => console.log(`Archivio note: (${statements.count.get().count} note)`));

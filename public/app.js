@@ -20,7 +20,6 @@ const elements = {
   colorInput: document.querySelector("#note-color"), pinnedInput: document.querySelector("#note-pinned"),
   archivedInput: document.querySelector("#note-archived"), contextMenu: document.querySelector("#context-menu"),
   dataDialog: document.querySelector("#data-dialog"), dataStatus: document.querySelector("#data-status"),
-  importFolder: document.querySelector("#import-folder"), exportFolder: document.querySelector("#export-folder"),
   importZip: document.querySelector("#import-zip"), exportZip: document.querySelector("#export-zip"),
   imageInput: document.querySelector("#image-input"), setupDialog: document.querySelector("#setup-dialog"),
   setupError: document.querySelector("#setup-error")
@@ -537,28 +536,6 @@ async function loadData() {
   if (!status.notes && !status.setupCompleted) elements.setupDialog.showModal();
 }
 
-async function transferData(action, folder) {
-  if (!folder.trim()) {
-    elements.dataStatus.textContent = "Indica una cartella.";
-    return;
-  }
-  elements.dataStatus.textContent = "Operazione in corso...";
-  const response = await fetch(`/api/${action}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ folder: folder.trim() })
-  });
-  const result = await response.text();
-  if (!response.ok) throw new Error(result);
-  const data = JSON.parse(result);
-  if (action === "import") {
-    await loadData();
-    elements.dataStatus.textContent = `Importate ${data.imported} note (${data.skipped} file ignorati).`;
-  } else {
-    elements.dataStatus.textContent = `Esportate ${data.exported} note, ${data.attachments} allegati e ${data.images || 0} immagini in ${data.folder}.`;
-  }
-}
-
 async function importZip() {
   const file = elements.importZip.files[0];
   if (!file) {
@@ -596,8 +573,6 @@ async function exportZip() {
   elements.dataStatus.textContent = `Esportate ${data.exported} note, ${data.attachments} allegati e ${data.images || 0} immagini in ${data.file}.`;
 }
 
-document.querySelector("#import-button").addEventListener("click", () => transferData("import", elements.importFolder.value).catch((error) => { elements.dataStatus.textContent = error.message; }));
-document.querySelector("#export-button").addEventListener("click", () => transferData("export", elements.exportFolder.value).catch((error) => { elements.dataStatus.textContent = error.message; }));
 document.querySelector("#import-zip-button").addEventListener("click", () => importZip().catch((error) => { elements.dataStatus.textContent = error.message; }));
 document.querySelector("#export-zip-button").addEventListener("click", () => exportZip().catch((error) => { elements.dataStatus.textContent = error.message; }));
 
