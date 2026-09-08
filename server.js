@@ -85,6 +85,8 @@ const statements = {
   getImage: db.prepare("SELECT id, mime_type, bytes FROM note_images WHERE id = ?"),
   insertImage: db.prepare("INSERT INTO note_images (id, note_id, mime_type, bytes, created_at) VALUES (?, ?, ?, ?, ?)"),
   clearImages: db.prepare("DELETE FROM note_images WHERE note_id = ?"),
+  deleteNote: db.prepare("DELETE FROM notes WHERE id = ?"),
+  deleteTrashedNotes: db.prepare("DELETE FROM notes WHERE is_trashed = 1"),
   getSetting: db.prepare("SELECT value FROM app_settings WHERE key = ?"),
   setSetting: db.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
 };
@@ -695,6 +697,16 @@ http.createServer(async (request, response) => {
       const image = { id: crypto.randomUUID(), noteId: id, mimeType, bytes };
       statements.insertImage.run(image.id, image.noteId, image.mimeType, image.bytes, Date.now() * 1000);
       return sendJson(response, 201, { id: image.id, url: imageUrl(image.id), mimetype: image.mimeType });
+    }
+    if (request.method === "DELETE" && /^\/api\/notes\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(url.pathname)) {
+      const id = url.pathname.split("/").pop();
+      if (!statements.get.get(id)) return send(response, 404, "text/plain; charset=utf-8", "Nota non trovata.");
+      statements.deleteNote.run(id);
+      return send(response, 204, "text/plain; charset=utf-8", "");
+    }
+    if (request.method === "DELETE" && url.pathname === "/api/trash") {
+      const result = statements.deleteTrashedNotes.run();
+      return sendJson(response, 200, { deleted: result.changes });
     }
     if (request.method === "PUT" && url.pathname.startsWith("/api/notes/")) {
       const id = decodeURIComponent(url.pathname.slice("/api/notes/".length));

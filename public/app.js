@@ -11,6 +11,7 @@ const colors = { RED: "#f28b82", ORANGE: "#fbbc04", YELLOW: "#fff475", GREEN: "#
 const elements = {
   notes: document.querySelector("#notes"), empty: document.querySelector("#empty"),
   summary: document.querySelector("#summary"), search: document.querySelector("#search"),
+  trashActions: document.querySelector("#trash-actions"), emptyTrash: document.querySelector("#empty-trash"),
   labels: document.querySelector("#label-list"), dialog: document.querySelector("#note-dialog"),
   detail: document.querySelector("#detail"), template: document.querySelector("#note-template"),
   editor: document.querySelector("#editor-dialog"), form: document.querySelector("#note-form"),
@@ -38,6 +39,26 @@ function visibleNotes() {
     const searchable = [note.title, note.textContent, ...note.listContent.map((item) => item.text), ...note.labels, ...note.annotations.flatMap((link) => [link.title, link.description, link.url])].join(" ").toLocaleLowerCase();
     return belongs && (!state.label || note.labels.includes(state.label)) && searchable.includes(query);
   });
+}
+
+async function deleteNotePermanently(note) {
+  const response = await fetch(`/api/notes/${note.id}`, { method: "DELETE" });
+  if (!response.ok) throw new Error(await response.text());
+  state.notes = state.notes.filter((item) => item.id !== note.id);
+  state.order.pinned = state.order.pinned.filter((id) => id !== note.id);
+  state.order.others = state.order.others.filter((id) => id !== note.id);
+  renderLabels();
+  render();
+}
+
+async function emptyTrash() {
+  const response = await fetch("/api/trash", { method: "DELETE" });
+  if (!response.ok) throw new Error(await response.text());
+  state.notes = state.notes.filter((note) => !note.isTrashed);
+  state.order.pinned = state.order.pinned.filter((id) => state.notes.some((note) => note.id === id));
+  state.order.others = state.order.others.filter((id) => state.notes.some((note) => note.id === id));
+  renderLabels();
+  render();
 }
 
 function media(attachments) {
@@ -127,6 +148,7 @@ function render() {
   }
   others.forEach(appendNote);
   elements.summary.textContent = `${notes.length} ${notes.length === 1 ? "nota" : "note"}`;
+  elements.trashActions.hidden = state.filter !== "trash" || notes.length === 0;
   elements.empty.hidden = notes.length !== 0;
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.filter === state.filter && !state.label));
   document.querySelectorAll("[data-label]").forEach((button) => button.classList.toggle("active", button.dataset.label === state.label));
@@ -184,6 +206,7 @@ function openContextMenu(note, x, y) {
     <button data-action="top" role="menuitem">Sposta in cima</button>
     <button data-action="pinned" role="menuitem">${note.isPinned ? "Rimuovi da fissate" : "Fissa nota"}</button>
     <button data-action="archived" role="menuitem">${note.isArchived ? "Rimuovi dall'archivio" : "Archivia nota"}</button>
+    <button data-action="trash" role="menuitem">${note.isTrashed ? "Elimina definitivamente" : "Sposta nel cestino"}</button>
     <div class="context-divider"></div>
     <span class="context-label">Cambia colore</span>
     <div class="color-choices">${colorOptions}</div>`;
@@ -203,8 +226,14 @@ function openContextMenu(note, x, y) {
       moveToTop(note).catch(() => alert("Impossibile spostare la nota in cima."));
       return;
     }
+    if (button.dataset.action === "trash" && note.isTrashed) {
+      closeContextMenu();
+      deleteNotePermanently(note).catch(() => alert("Impossibile eliminare definitivamente la nota."));
+      return;
+    }
     if (button.dataset.action === "pinned") changes = { isPinned: !note.isPinned };
     if (button.dataset.action === "archived") changes = { isArchived: !note.isArchived };
+    if (button.dataset.action === "trash") changes = { isTrashed: true };
     if (button.dataset.color) changes = { color: button.dataset.color };
     if (!changes) return;
     closeContextMenu();
@@ -254,10 +283,16 @@ async function moveNote(draggedId, targetId, isPinned, position) {
 
 function openNote(note) {
   elements.detail.style.backgroundColor = colors[note.color] || colors.DEFAULT;
-  elements.detail.innerHTML = `${cardBody(note, true)}<footer>${note.labels.map((label) => `<em>${escapeHtml(label)}</em>`).join("")}<span>Modificata ${date(note.editedAt)}</span><button class="edit-note">Modifica</button></footer>`;
+  const trashLabel = note.isTrashed ? "Elimina definitivamente" : "Sposta nel cestino";
+  elements.detail.innerHTML = `${cardBody(note, true)}<footer>${note.labels.map((label) => `<em>${escapeHtml(label)}</em>`).join("")}<span>Modificata ${date(note.editedAt)}</span><button class="edit-note">Modifica</button><button class="edit-note trash-note">${trashLabel}</button></footer>`;
   elements.detail.querySelector(".edit-note").addEventListener("click", () => {
     elements.dialog.close();
     openEditor(note);
+  });
+  elements.detail.querySelector(".trash-note").addEventListener("click", () => {
+    elements.dialog.close();
+    if (note.isTrashed) deleteNotePermanently(note).catch(() => alert("Impossibile eliminare definitivamente la nota."));
+    else updateNote(note, { isTrashed: true }).catch(() => alert("Impossibile spostare la nota nel cestino."));
   });
   elements.dialog.showModal();
 }
@@ -426,6 +461,7 @@ document.querySelector("#view-button").addEventListener("click", () => { state.g
 document.querySelector("#menu-button").addEventListener("click", () => document.body.classList.toggle("sidebar-hidden"));
 document.querySelector("#close-dialog").addEventListener("click", () => elements.dialog.close());
 document.querySelector("#new-note").addEventListener("click", () => openEditor());
+elements.emptyTrash.addEventListener("click", () => emptyTrash().catch(() => alert("Impossibile svuotare il cestino.")));
 document.querySelector("#close-editor").addEventListener("click", () => elements.editor.close());
 elements.form.addEventListener("submit", (event) => saveNote(event).catch(() => { elements.saveError.textContent = "Errore di connessione durante il salvataggio."; }));
 document.querySelectorAll(".editor-toolbar [data-command]").forEach((button) => {

@@ -84,6 +84,10 @@ docker compose up --build
 
 - I dialog sono ora fissati al viewport. L'apertura di una nota non sposta piu'
   la pagina dalla posizione della card selezionata.
+- Aggiunta l'azione **Sposta nel cestino** sia nel menu contestuale sia nella
+  preview accanto a **Modifica**. La nota viene conservata nel cestino.
+- Nel Cestino è possibile svuotare tutti gli elementi oppure eliminarli
+  definitivamente singolarmente dal menu contestuale o dalla preview.
 
 #### Immagini nelle note
 
