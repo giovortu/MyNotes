@@ -74,9 +74,10 @@ const statements = {
   all: db.prepare(`SELECT n.* FROM notes n LEFT JOIN note_order o ON o.note_id = n.id
     ORDER BY n.is_pinned DESC, CASE WHEN o.position IS NULL THEN 1 ELSE 0 END, o.position ASC, n.edited_at DESC`),
   bySource: db.prepare("SELECT id FROM notes WHERE source_dir = ? AND source_file = ?"),
+  bySourceFile: db.prepare("SELECT id FROM notes WHERE source_file = ? ORDER BY edited_at DESC"),
   insert: db.prepare(`INSERT INTO notes (id, source_file, source_dir, data, title, text_content, is_pinned, is_archived, is_trashed, created_at, edited_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
-  update: db.prepare(`UPDATE notes SET data = ?, title = ?, text_content = ?, is_pinned = ?, is_archived = ?, is_trashed = ?, created_at = ?, edited_at = ? WHERE id = ?`),
+  update: db.prepare(`UPDATE notes SET source_file = ?, source_dir = ?, data = ?, title = ?, text_content = ?, is_pinned = ?, is_archived = ?, is_trashed = ?, created_at = ?, edited_at = ? WHERE id = ?`),
   allOrder: db.prepare("SELECT note_id, pinned FROM note_order ORDER BY pinned DESC, position ASC"),
   clearOrder: db.prepare("DELETE FROM note_order WHERE pinned = ?"),
   putOrder: db.prepare("INSERT INTO note_order (note_id, pinned, position) VALUES (?, ?, ?)"),
@@ -87,6 +88,10 @@ const statements = {
   clearImages: db.prepare("DELETE FROM note_images WHERE note_id = ?"),
   deleteNote: db.prepare("DELETE FROM notes WHERE id = ?"),
   deleteTrashedNotes: db.prepare("DELETE FROM notes WHERE is_trashed = 1"),
+  clearAllOrder: db.prepare("DELETE FROM note_order"),
+  clearAllImages: db.prepare("DELETE FROM note_images"),
+  clearNotes: db.prepare("DELETE FROM notes"),
+  clearSettings: db.prepare("DELETE FROM app_settings"),
   getSetting: db.prepare("SELECT value FROM app_settings WHERE key = ?"),
   setSetting: db.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
 };
@@ -136,6 +141,22 @@ function completeSetup() {
   statements.setSetting.run("setup-completed", "true");
 }
 
+function resetDatabase() {
+  const notes = statements.count.get().count;
+  db.exec("BEGIN");
+  try {
+    statements.clearAllOrder.run();
+    statements.clearAllImages.run();
+    statements.clearNotes.run();
+    statements.clearSettings.run();
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return { deleted: notes };
+}
+
 function noteRecord(raw, sourceFile, sourceDir, id = crypto.randomUUID()) {
   return [
     id, sourceFile, sourceDir, JSON.stringify(raw), raw.title || "", raw.textContent || "",
@@ -147,13 +168,25 @@ function noteRecord(raw, sourceFile, sourceDir, id = crypto.randomUUID()) {
 function writeNote(raw, sourceFile, sourceDir, id) {
   const existing = id && statements.get.get(id);
   if (existing) {
-    const record = noteRecord(raw, existing.source_file, existing.source_dir, id);
-    statements.update.run(...record.slice(3), id);
+    const record = noteRecord(raw, sourceFile, sourceDir, id);
+    statements.update.run(...record.slice(1), id);
     return statements.get.get(id);
   }
   const record = noteRecord(raw, sourceFile, sourceDir, id);
   statements.insert.run(...record);
   return statements.get.get(record[0]);
+}
+
+function importTarget(sourceDir, sourceFile) {
+  const fromSource = statements.bySource.get(sourceDir, sourceFile);
+  if (fromSource) return fromSource;
+  return statements.bySourceFile.all(sourceFile)[0];
+}
+
+function removeDuplicateSources(sourceFile, retainedId) {
+  for (const duplicate of statements.bySourceFile.all(sourceFile)) {
+    if (duplicate.id !== retainedId) statements.deleteNote.run(duplicate.id);
+  }
 }
 
 function importFolder(folder) {
@@ -168,10 +201,11 @@ function importFolder(folder) {
       db.exec("SAVEPOINT import_note");
       try {
         const raw = JSON.parse(fs.readFileSync(path.join(sourceDir, sourceFile), "utf8"));
-        const existing = statements.bySource.get(sourceDir, sourceFile);
+        const existing = importTarget(sourceDir, sourceFile);
         const row = writeNote(raw, sourceFile, sourceDir, existing?.id);
         importInlineImages(raw, row, sourceDir);
         removeUnusedImages(row.id, raw.textContentHtml);
+        removeDuplicateSources(sourceFile, row.id);
         db.exec("RELEASE SAVEPOINT import_note");
         imported += 1;
       } catch (error) {
@@ -720,6 +754,7 @@ http.createServer(async (request, response) => {
       const result = statements.deleteTrashedNotes.run();
       return sendJson(response, 200, { deleted: result.changes });
     }
+    if (request.method === "DELETE" && url.pathname === "/api/database") return sendJson(response, 200, resetDatabase());
     if (request.method === "PUT" && url.pathname.startsWith("/api/notes/")) {
       const id = decodeURIComponent(url.pathname.slice("/api/notes/".length));
       const row = statements.get.get(id);

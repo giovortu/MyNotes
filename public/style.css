@@ -198,6 +198,9 @@ dialog { border-radius: 20px; box-shadow: 0 20px 60px #12111f66; }
 .folder-action { display: flex; gap: 8px; padding: 6px 20px 8px; }
 .folder-action input { min-width: 0; flex: 1; border: 1px solid #dedbe9; border-radius: 8px; padding: 9px 10px; outline-color: #7657ff; }
 .folder-action button { border: 0; border-radius: 8px; background: #eae6ff; color: #553bbd; cursor: pointer; font-weight: 700; padding: 8px 12px; }
+.danger-zone { margin: 16px 20px 6px; padding-top: 14px; border-top: 1px solid #f1d5d2; }
+.danger-button { border: 0; border-radius: 8px; background: #b3261e; color: #fff; cursor: pointer; font-weight: 700; padding: 9px 12px; }
+.danger-button:hover { background: #8f1f19; }
 .data-status { min-height: 21px; font-size: 12px; }
 #note-form header { position: sticky; top: 0; z-index: 3; color: #272534; background: #fff; box-shadow: none; }
 #note-form > input, #note-form textarea { color: #353441; }

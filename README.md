@@ -62,6 +62,9 @@ docker compose up --build
 - Gli ZIP importati sono limitati a 100 MB, 10.000 elementi e 250 MB estratti;
   percorsi non sicuri e tipi di file non supportati vengono rifiutati. Le
   estrazioni temporanee vengono rimosse al termine.
+- L'importazione ZIP richiede una conferma. Il dialog include inoltre
+  **Cancella completamente il database**, evidenziato in rosso e protetto da
+  conferma: elimina note, immagini, ordine e impostazioni.
 
 ## Cronologia delle modifiche
 

@@ -32,12 +32,13 @@ const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&"
 const lines = (value) => escapeHtml(value).replace(/\n/g, "<br>");
 const date = (microseconds) => new Intl.DateTimeFormat("it-IT", { dateStyle: "medium" }).format(new Date(microseconds / 1000));
 
-function openConfirmation({ title, message, confirmLabel = "Conferma", cancellable = true }) {
+function openConfirmation({ title, message, confirmLabel = "Conferma", cancellable = true, destructive = false }) {
   elements.confirmationTitle.textContent = title;
   elements.confirmationMessage.textContent = message;
   elements.confirmationCancel.hidden = !cancellable;
   elements.confirmationSubmit.textContent = confirmLabel;
   elements.confirmationSubmit.value = cancellable ? "confirm" : "close";
+  elements.confirmationSubmit.classList.toggle("danger-button", destructive);
   elements.confirmationDialog.showModal();
   return new Promise((resolve) => {
     elements.confirmationDialog.addEventListener("close", () => resolve(elements.confirmationDialog.returnValue === "confirm"), { once: true });
@@ -634,6 +635,13 @@ async function importZip() {
   elements.dataStatus.textContent = `Importate ${data.imported} note (${data.skipped} file ignorati).`;
 }
 
+async function resetDatabase() {
+  const response = await fetch("/api/database", { method: "DELETE" });
+  if (!response.ok) throw new Error(await response.text());
+  elements.dataDialog.close();
+  await loadData();
+}
+
 async function exportZip() {
   elements.dataStatus.textContent = "Esportazione ZIP in corso...";
   const response = await fetch("/api/export/zip");
@@ -649,7 +657,29 @@ async function exportZip() {
   elements.dataStatus.textContent = "Download dell'archivio ZIP avviato.";
 }
 
-document.querySelector("#import-zip-button").addEventListener("click", () => importZip().catch((error) => { elements.dataStatus.textContent = error.message; }));
+document.querySelector("#import-zip-button").addEventListener("click", () => {
+  if (!elements.importZip.files[0]) {
+    elements.dataStatus.textContent = "Seleziona un archivio ZIP.";
+    return;
+  }
+  openConfirmation({
+    title: "Importare l'archivio ZIP?",
+    message: "Le note dell'archivio verranno aggiunte o aggiornate. I dati esistenti non verranno cancellati.",
+    confirmLabel: "Importa"
+  }).then((confirmed) => {
+    if (confirmed) importZip().catch((error) => { elements.dataStatus.textContent = error.message; });
+  });
+});
 document.querySelector("#export-zip-button").addEventListener("click", () => exportZip().catch((error) => { elements.dataStatus.textContent = error.message; }));
+document.querySelector("#reset-database").addEventListener("click", () => {
+  openConfirmation({
+    title: "Cancellare completamente il database?",
+    message: "Tutte le note, immagini, ordine e impostazioni verranno eliminati definitivamente. L'operazione non può essere annullata.",
+    confirmLabel: "Cancella database",
+    destructive: true
+  }).then((confirmed) => {
+    if (confirmed) resetDatabase().catch((error) => showError(`Impossibile cancellare il database: ${error.message}`));
+  });
+});
 
 loadData().catch((error) => { elements.empty.hidden = false; elements.empty.textContent = error.message; });
