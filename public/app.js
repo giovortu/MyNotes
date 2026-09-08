@@ -228,6 +228,7 @@ function openContextMenu(note, x, y) {
     }
     if (button.dataset.action === "trash" && note.isTrashed) {
       closeContextMenu();
+      if (!window.confirm("Eliminare definitivamente questa nota? L'operazione non può essere annullata.")) return;
       deleteNotePermanently(note).catch(() => alert("Impossibile eliminare definitivamente la nota."));
       return;
     }
@@ -290,9 +291,14 @@ function openNote(note) {
     openEditor(note);
   });
   elements.detail.querySelector(".trash-note").addEventListener("click", () => {
+    if (note.isTrashed) {
+      if (!window.confirm("Eliminare definitivamente questa nota? L'operazione non può essere annullata.")) return;
+      elements.dialog.close();
+      deleteNotePermanently(note).catch(() => alert("Impossibile eliminare definitivamente la nota."));
+      return;
+    }
     elements.dialog.close();
-    if (note.isTrashed) deleteNotePermanently(note).catch(() => alert("Impossibile eliminare definitivamente la nota."));
-    else updateNote(note, { isTrashed: true }).catch(() => alert("Impossibile spostare la nota nel cestino."));
+    updateNote(note, { isTrashed: true }).catch(() => alert("Impossibile spostare la nota nel cestino."));
   });
   elements.dialog.showModal();
 }
@@ -461,7 +467,10 @@ document.querySelector("#view-button").addEventListener("click", () => { state.g
 document.querySelector("#menu-button").addEventListener("click", () => document.body.classList.toggle("sidebar-hidden"));
 document.querySelector("#close-dialog").addEventListener("click", () => elements.dialog.close());
 document.querySelector("#new-note").addEventListener("click", () => openEditor());
-elements.emptyTrash.addEventListener("click", () => emptyTrash().catch(() => alert("Impossibile svuotare il cestino.")));
+elements.emptyTrash.addEventListener("click", () => {
+  if (!window.confirm("Svuotare il cestino? Tutte le note cestinate verranno eliminate definitivamente.")) return;
+  emptyTrash().catch(() => alert("Impossibile svuotare il cestino."));
+});
 document.querySelector("#close-editor").addEventListener("click", () => elements.editor.close());
 elements.form.addEventListener("submit", (event) => saveNote(event).catch(() => { elements.saveError.textContent = "Errore di connessione durante il salvataggio."; }));
 document.querySelectorAll(".editor-toolbar [data-command]").forEach((button) => {

@@ -88,6 +88,8 @@ docker compose up --build
   preview accanto a **Modifica**. La nota viene conservata nel cestino.
 - Nel Cestino è possibile svuotare tutti gli elementi oppure eliminarli
   definitivamente singolarmente dal menu contestuale o dalla preview.
+- L'azione **Svuota cestino** è visibile solo nella sezione Cestino; ogni
+  cancellazione definitiva richiede una conferma.
 
 #### Immagini nelle note
 

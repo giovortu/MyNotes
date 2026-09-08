@@ -129,6 +129,7 @@ aside { top: 76px; width: 280px; padding: 19px 13px; background: #20202c; color:
 main { margin-left: 280px; padding: 42px 48px; }
 #summary { max-width: 1420px; color: #777585; font-size: 12px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; }
 .trash-actions { display: flex; justify-content: flex-end; max-width: 1420px; margin: -4px auto 14px; }
+.trash-actions[hidden] { display: none; }
 .trash-note { color: #b3261e; }
 .notes.grid { display: flex; flex-wrap: wrap; columns: initial; gap: 8px; max-width: 1420px; }
 .note-section-heading { width: 100%; margin: 15px 0 -2px; color: #777585; font-size: 11px; letter-spacing: 1.1px; }
