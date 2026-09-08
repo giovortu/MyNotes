@@ -39,9 +39,9 @@ docker run --rm -p 3000:3000 \
 `/data/keep.sqlite` conserva le modifiche tra i riavvii. Al primo avvio, con
 database vuoto, l'app chiede se importare un archivio ZIP o iniziare con un
 archivio vuoto.
-L'immagine installa anche le dipendenze ZIP con `npm ci`; gli archivi importati
-mantengono i loro allegati in `/data/zip-imports`, quindi anche questi restano
-disponibili grazie al volume persistente.
+L'immagine installa anche le dipendenze ZIP con `npm ci`. Gli archivi vengono
+estratti temporaneamente in `/data/zip-imports`; al termine dell'importazione
+gli allegati sono salvati nel database e la cartella temporanea viene rimossa.
 
 In alternativa, dalla cartella `App`, avvia direttamente:
 
@@ -51,8 +51,9 @@ docker compose up --build
 
 ## Dati
 
-- Le note, il loro ordinamento e le immagini inserite sono conservati in
-  `App/keep.sqlite`.
+- Le note, il loro ordinamento, le immagini inserite e gli allegati importati
+  sono conservati in `App/keep.sqlite`. Immagini e allegati sono BLOB collegati
+  alla nota, quindi restano disponibili anche dopo la rimozione dello ZIP.
 - Le label sono contenute nei dati delle singole note. Il file `Labels.txt`
   viene prodotto durante l'esportazione ed e' solo un elenco di supporto.
 - Il dialog **Importa ed esporta** gestisce esclusivamente archivi ZIP: scegli
@@ -61,7 +62,8 @@ docker compose up --build
   tramite `appImages`.
 - Gli ZIP importati sono limitati a 100 MB, 10.000 elementi e 250 MB estratti;
   percorsi non sicuri e tipi di file non supportati vengono rifiutati. Le
-  estrazioni temporanee vengono rimosse al termine.
+  estrazioni temporanee, compresi eventuali residui di importazioni precedenti,
+  vengono rimosse al termine, anche in caso di errore.
 - L'importazione ZIP richiede una conferma. Il dialog include inoltre
   **Cancella completamente il database**, evidenziato in rosso e protetto da
   conferma: elimina note, immagini, ordine e impostazioni.
@@ -114,6 +116,9 @@ docker compose up --build
   `appImages` ai JSON delle note.
 - L'importazione legge quel manifest, salva di nuovo i file come BLOB nel
   database e sostituisce i riferimenti portabili con gli URL locali corretti.
+- Gli allegati non immagine importati sono ora salvati come BLOB SQLite; gli
+  ZIP esportati includono nuovamente tali byte tramite il manifest
+  `appAttachments`. `zip-imports` viene eliminata dopo ogni importazione.
 - Aggiunte importazione da un file ZIP selezionato nel browser ed esportazione
   ZIP tramite download del browser, con controlli contro zip-slip e limiti di
   dimensione.

@@ -62,6 +62,16 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS note_images_note_index ON note_images(note_id);
+  CREATE TABLE IF NOT EXISTS note_attachments (
+    id TEXT PRIMARY KEY,
+    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    bytes BLOB NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(note_id, name)
+  );
+  CREATE INDEX IF NOT EXISTS note_attachments_note_index ON note_attachments(note_id);
   CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -86,10 +96,16 @@ const statements = {
   getImage: db.prepare("SELECT id, mime_type, bytes FROM note_images WHERE id = ?"),
   insertImage: db.prepare("INSERT INTO note_images (id, note_id, mime_type, bytes, created_at) VALUES (?, ?, ?, ?, ?)"),
   clearImages: db.prepare("DELETE FROM note_images WHERE note_id = ?"),
+  attachmentsForNote: db.prepare("SELECT id, name, mime_type, bytes FROM note_attachments WHERE note_id = ? ORDER BY created_at ASC"),
+  getAttachment: db.prepare("SELECT id, name, mime_type, bytes FROM note_attachments WHERE note_id = ? AND name = ?"),
+  insertAttachment: db.prepare("INSERT INTO note_attachments (id, note_id, name, mime_type, bytes, created_at) VALUES (?, ?, ?, ?, ?, ?)"),
+  deleteAttachment: db.prepare("DELETE FROM note_attachments WHERE note_id = ? AND name = ?"),
+  clearAttachments: db.prepare("DELETE FROM note_attachments WHERE note_id = ?"),
   deleteNote: db.prepare("DELETE FROM notes WHERE id = ?"),
   deleteTrashedNotes: db.prepare("DELETE FROM notes WHERE is_trashed = 1"),
   clearAllOrder: db.prepare("DELETE FROM note_order"),
   clearAllImages: db.prepare("DELETE FROM note_images"),
+  clearAllAttachments: db.prepare("DELETE FROM note_attachments"),
   clearNotes: db.prepare("DELETE FROM notes"),
   clearSettings: db.prepare("DELETE FROM app_settings"),
   getSetting: db.prepare("SELECT value FROM app_settings WHERE key = ?"),
@@ -98,6 +114,16 @@ const statements = {
 
 function imageUrl(id) {
   return `/api/images/${id}`;
+}
+
+function isAttachmentName(name) {
+  return typeof name === "string" && Boolean(name) && name !== "." && name !== ".." &&
+    !/[\0/\\\r\n]/.test(name) && path.basename(name) === name;
+}
+
+function attachmentMimeType(mimeType) {
+  const value = typeof mimeType === "string" ? mimeType.trim() : "";
+  return /^[\x20-\x7e]{1,255}$/.test(value) && value.includes("/") ? value : "application/octet-stream";
 }
 
 function normalizeNote(raw, row) {
@@ -115,11 +141,13 @@ function normalizeNote(raw, row) {
     createdAt: Number(raw.createdTimestampUsec || 0),
     editedAt: Number(raw.userEditedTimestampUsec || 0),
     annotations: (raw.annotations || []).map(({ title, description, url }) => ({ title, description, url })),
-    attachments: (raw.attachments || []).map(({ filePath, mimetype }) => ({
-      name: filePath,
-      mimetype,
-      url: `/media/${encodeURIComponent(row.id)}/${encodeURIComponent(filePath)}`
-    }))
+    attachments: (raw.attachments || [])
+      .filter((attachment) => isAttachmentName(attachment?.filePath))
+      .map(({ filePath, mimetype }) => ({
+        name: filePath,
+        mimetype: attachmentMimeType(mimetype),
+        url: `/media/${encodeURIComponent(row.id)}/${encodeURIComponent(filePath)}`
+      }))
   };
 }
 
@@ -147,6 +175,7 @@ function resetDatabase() {
   try {
     statements.clearAllOrder.run();
     statements.clearAllImages.run();
+    statements.clearAllAttachments.run();
     statements.clearNotes.run();
     statements.clearSettings.run();
     db.exec("COMMIT");
@@ -204,6 +233,8 @@ function importFolder(folder) {
         const existing = importTarget(sourceDir, sourceFile);
         const row = writeNote(raw, sourceFile, sourceDir, existing?.id);
         importInlineImages(raw, row, sourceDir);
+        importAttachments(raw, row, sourceDir);
+        migrateAttachmentImagesForNote(raw, row);
         removeUnusedImages(row.id, raw.textContentHtml);
         removeDuplicateSources(sourceFile, row.id);
         db.exec("RELEASE SAVEPOINT import_note");
@@ -317,6 +348,7 @@ function escapeAttribute(value) {
 }
 
 function imageMime(buffer) {
+  buffer = Buffer.from(buffer);
   if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
   if (buffer.length >= 3 && buffer.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return "image/jpeg";
   if (buffer.length >= 6 && ["GIF87a", "GIF89a"].includes(buffer.subarray(0, 6).toString("ascii"))) return "image/gif";
@@ -341,6 +373,53 @@ function extensionForImage(mimeType) {
 
 function portableImageUrl(fileName) {
   return `keep-image:${encodeURIComponent(fileName)}`;
+}
+
+function attachmentFile(sourceDir, name) {
+  if (!isAttachmentName(name)) throw new Error("Nome file allegato non valido.");
+  const file = path.join(sourceDir, name);
+  if (!fs.existsSync(file) || !fs.statSync(file).isFile()) throw new Error(`Allegato mancante: ${name}`);
+  return file;
+}
+
+function insertAttachment(noteId, name, mimeType, bytes) {
+  statements.insertAttachment.run(crypto.randomUUID(), noteId, name, attachmentMimeType(mimeType), bytes, Date.now() * 1000);
+}
+
+function importAttachments(raw, row, sourceDir) {
+  const manifest = raw.appAttachments;
+  delete raw.appAttachments;
+  if (manifest !== undefined && !Array.isArray(manifest)) throw new Error("Elenco allegati esportati non valido.");
+  const attachments = raw.attachments || [];
+  if (!Array.isArray(attachments)) throw new Error("Elenco allegati non valido.");
+
+  const manifestByFile = new Map();
+  for (const item of manifest || []) {
+    if (!item || !isAttachmentName(item.filePath) || !isAttachmentName(item.name) || manifestByFile.has(item.filePath)) {
+      throw new Error("Manifest degli allegati non valido.");
+    }
+    manifestByFile.set(item.filePath, item);
+  }
+
+  const imported = [];
+  const usedManifestFiles = new Set();
+  for (const attachment of attachments) {
+    if (!attachment || !isAttachmentName(attachment.filePath)) throw new Error("Nome file allegato non valido.");
+    const entry = manifestByFile.get(attachment.filePath);
+    if (manifest !== undefined && !entry) throw new Error("Manifest degli allegati incompleto.");
+    const sourceName = entry ? entry.filePath : attachment.filePath;
+    const name = entry ? entry.name : attachment.filePath;
+    if (!isAttachmentName(name) || imported.some((item) => item.name === name)) throw new Error("Nomi degli allegati duplicati o non validi.");
+    const bytes = fs.readFileSync(attachmentFile(sourceDir, sourceName));
+    imported.push({ name, mimeType: attachmentMimeType(entry?.mimetype || attachment.mimetype), bytes, attachment });
+    if (entry) usedManifestFiles.add(sourceName);
+  }
+  if (manifest !== undefined && usedManifestFiles.size !== manifestByFile.size) throw new Error("Manifest degli allegati non valido.");
+
+  statements.clearAttachments.run(row.id);
+  for (const attachment of imported) insertAttachment(row.id, attachment.name, attachment.mimeType, attachment.bytes);
+  raw.attachments = imported.map(({ name, mimeType, attachment }) => ({ ...attachment, filePath: name, mimetype: mimeType }));
+  writeNote(raw, row.source_file, row.source_dir, row.id);
 }
 
 function importInlineImages(raw, row, sourceDir) {
@@ -369,31 +448,38 @@ function importInlineImages(raw, row, sourceDir) {
   writeNote(raw, row.source_file, row.source_dir, row.id);
 }
 
-function migrateAttachmentImages() {
-  for (const row of statements.all.all()) {
-    const raw = JSON.parse(row.data);
-    const imageAttachments = (raw.attachments || []).filter((attachment) => attachment?.mimetype?.startsWith("image/"));
-    if (!imageAttachments.length) continue;
-
-    const images = [];
-    for (const attachment of imageAttachments) {
-      const filename = path.basename(attachment.filePath || "");
-      const filePath = path.join(row.source_dir, filename);
-      if (!filename || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) continue;
-      const bytes = fs.readFileSync(filePath);
-      const mimeType = imageMime(bytes);
-      if (!mimeType || bytes.length > maxImageBytes) continue;
-      const id = crypto.randomUUID();
-      statements.insertImage.run(id, row.id, mimeType, bytes, Date.now() * 1000);
-      images.push({ id, filename });
+function migrateAttachmentImagesForNote(raw, row) {
+  const attachments = Array.isArray(raw.attachments) ? raw.attachments : [];
+  const images = [];
+  const migrated = new Set();
+  for (const [index, attachment] of attachments.entries()) {
+    if (!attachment?.mimetype?.startsWith("image/") || !isAttachmentName(attachment.filePath)) continue;
+    const stored = statements.getAttachment.get(row.id, attachment.filePath);
+    let bytes = stored?.bytes;
+    if (!bytes) {
+      try {
+        bytes = fs.readFileSync(attachmentFile(row.source_dir, attachment.filePath));
+      } catch {
+        continue;
+      }
     }
-    if (!images.length) continue;
-
-    raw.attachments = (raw.attachments || []).filter((attachment) => !attachment?.mimetype?.startsWith("image/"));
-    const existingHtml = raw.textContentHtml || (raw.textContent ? plainTextHtml(raw.textContent) : "");
-    raw.textContentHtml = `${existingHtml}${images.map((image) => `<img src="${imageUrl(image.id)}" alt="${escapeAttribute(image.filename)}">`).join("")}`;
-    writeNote(raw, row.source_file, row.source_dir, row.id);
+    const mimeType = imageMime(bytes);
+    if (!mimeType || bytes.length > maxImageBytes) continue;
+    const id = crypto.randomUUID();
+    statements.insertImage.run(id, row.id, mimeType, bytes, Date.now() * 1000);
+    statements.deleteAttachment.run(row.id, attachment.filePath);
+    images.push({ id, filename: attachment.filePath });
+    migrated.add(index);
   }
+  if (!images.length) return;
+  raw.attachments = attachments.filter((_, index) => !migrated.has(index));
+  const existingHtml = raw.textContentHtml || (raw.textContent ? plainTextHtml(raw.textContent) : "");
+  raw.textContentHtml = `${existingHtml}${images.map((image) => `<img src="${imageUrl(image.id)}" alt="${escapeAttribute(image.filename)}">`).join("")}`;
+  writeNote(raw, row.source_file, row.source_dir, row.id);
+}
+
+function migrateAttachmentImages() {
+  for (const row of statements.all.all()) migrateAttachmentImagesForNote(JSON.parse(row.data), row);
 }
 
 function removeUnusedImages(noteId, html) {
@@ -401,6 +487,23 @@ function removeUnusedImages(noteId, html) {
   if (!imageIds.length) return statements.clearImages.run(noteId);
   const placeholders = imageIds.map(() => "?").join(", ");
   db.prepare(`DELETE FROM note_images WHERE note_id = ? AND id NOT IN (${placeholders})`).run(noteId, ...imageIds);
+}
+
+function exportAttachmentName(noteId, attachmentId, name, usedFiles) {
+  const extension = path.extname(name);
+  const safeExtension = /^\.[a-z0-9]{1,16}$/i.test(extension) ? extension.toLowerCase() : ".bin";
+  const prefix = `attachment-${noteId}-${attachmentId}`;
+  let file = `${prefix}${safeExtension}`;
+  let suffix = 1;
+  while (usedFiles.has(file)) file = `${prefix}-${suffix++}${safeExtension}`;
+  usedFiles.add(file);
+  return file;
+}
+
+function attachmentBytesForExport(row, name) {
+  const stored = statements.getAttachment.get(row.id, name);
+  if (stored) return { bytes: stored.bytes, mimeType: stored.mime_type, id: stored.id };
+  return { bytes: fs.readFileSync(attachmentFile(row.source_dir, name)), mimeType: undefined, id: crypto.randomUUID() };
 }
 
 function exportFolder(folder) {
@@ -424,16 +527,23 @@ function exportFolder(folder) {
       images += 1;
     }
     raw.appImages = inlineImages;
-    fs.writeFileSync(path.join(targetDir, file), `${JSON.stringify(raw, null, 2)}\n`, "utf8");
-    for (const attachment of raw.attachments || []) {
-      const name = path.basename(attachment.filePath || "");
-      const source = path.join(row.source_dir, name);
-      const target = path.join(targetDir, name);
-      if (name && fs.existsSync(source) && !fs.existsSync(target)) {
-        fs.copyFileSync(source, target);
-        attachments += 1;
-      }
+    const attachmentManifest = [];
+    const exportedAttachments = [];
+    const rawAttachments = raw.attachments || [];
+    if (!Array.isArray(rawAttachments)) throw new Error(`Elenco allegati non valido: ${file}`);
+    for (const attachment of rawAttachments) {
+      const name = attachment?.filePath;
+      if (!isAttachmentName(name)) throw new Error(`Nome file allegato non valido: ${file}`);
+      const stored = attachmentBytesForExport(row, name);
+      const archiveName = exportAttachmentName(row.id, stored.id, name, usedFiles);
+      fs.writeFileSync(path.join(targetDir, archiveName), stored.bytes);
+      exportedAttachments.push({ ...attachment, filePath: archiveName, mimetype: attachmentMimeType(attachment.mimetype || stored.mimeType) });
+      attachmentManifest.push({ filePath: archiveName, name, mimetype: attachmentMimeType(attachment.mimetype || stored.mimeType) });
+      attachments += 1;
     }
+    raw.attachments = exportedAttachments;
+    raw.appAttachments = attachmentManifest;
+    fs.writeFileSync(path.join(targetDir, file), `${JSON.stringify(raw, null, 2)}\n`, "utf8");
   }
   fs.writeFileSync(path.join(targetDir, "Labels.txt"), `${[...new Set(loadNotes().flatMap((note) => note.labels))].sort().join("\n")}\n`, "utf8");
   return { exported: statements.count.get().count, attachments, images, folder: targetDir };
@@ -598,6 +708,48 @@ function createZip(sourceDir, destination) {
   });
 }
 
+function isArchiveSource(sourceDir) {
+  const relative = path.relative(archiveStorageDir, path.resolve(sourceDir));
+  return relative !== "" && !relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative);
+}
+
+function migrateStoredArchiveAttachments() {
+  db.exec("BEGIN");
+  try {
+    for (const row of statements.all.all()) {
+      if (!isArchiveSource(row.source_dir)) continue;
+      const raw = JSON.parse(row.data);
+      const attachments = Array.isArray(raw.attachments) ? raw.attachments : [];
+      for (const attachment of attachments) {
+        const name = attachment?.filePath;
+        if (!isAttachmentName(name) || statements.getAttachment.get(row.id, name)) continue;
+        try {
+          insertAttachment(row.id, name, attachment.mimetype, fs.readFileSync(attachmentFile(row.source_dir, name)));
+        } catch (error) {
+          console.warn(`Could not preserve attachment ${name || "(invalid)"}: ${error.message}`);
+        }
+      }
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function clearArchiveStorage() {
+  const root = path.resolve(archiveStorageDir);
+  if (root === path.parse(root).root || !fs.existsSync(root)) return;
+  for (const entry of fs.readdirSync(root)) {
+    const target = path.resolve(root, entry);
+    const relative = path.relative(root, target);
+    if (relative && !relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative)) {
+      fs.rmSync(target, { recursive: true, force: true });
+    }
+  }
+  fs.rmdirSync(root);
+}
+
 function completeImport(folder) {
   const result = importFolder(folder);
   migrateAttachmentImages();
@@ -608,46 +760,32 @@ async function importZip(request) {
   fs.mkdirSync(archiveStorageDir, { recursive: true });
   const token = crypto.randomUUID();
   const uploadFile = path.join(archiveStorageDir, `.upload-${token}.zip`);
-  let extractionDir = path.join(archiveStorageDir, `.extract-${token}`);
-  let sourceDir;
-  let createdSource = false;
+  const extractionDir = path.join(archiveStorageDir, `.extract-${token}`);
   try {
-    const hash = await receiveZip(request, uploadFile);
+    await receiveZip(request, uploadFile);
     fs.mkdirSync(extractionDir);
     await extractZip(uploadFile, extractionDir);
-    sourceDir = path.join(archiveStorageDir, hash);
-    if (fs.existsSync(sourceDir)) {
-      fs.rmSync(extractionDir, { recursive: true, force: true });
-    } else {
-      try {
-        fs.renameSync(extractionDir, sourceDir);
-        extractionDir = "";
-        createdSource = true;
-      } catch (error) {
-        if (error.code !== "EEXIST") throw error;
-        fs.rmSync(extractionDir, { recursive: true, force: true });
-      }
-    }
-    return completeImport(sourceDir);
-  } catch (error) {
-    if (createdSource && sourceDir) fs.rmSync(sourceDir, { recursive: true, force: true });
-    throw error;
+    return completeImport(extractionDir);
   } finally {
-    fs.rmSync(uploadFile, { force: true });
-    if (extractionDir) fs.rmSync(extractionDir, { recursive: true, force: true });
+    clearArchiveStorage();
   }
 }
 
 async function exportZip() {
   fs.mkdirSync(archiveStorageDir, { recursive: true });
   const exportDir = fs.mkdtempSync(path.join(archiveStorageDir, ".keep-export-"));
-  const zipFile = path.join(exportDir, "archivio-note.zip");
+  const zipFile = path.join(archiveStorageDir, `.download-${crypto.randomUUID()}.zip`);
+  const cleanup = () => {
+    fs.rmSync(exportDir, { recursive: true, force: true });
+    fs.rmSync(zipFile, { force: true });
+    clearArchiveStorage();
+  };
   try {
     exportFolder(exportDir);
     await createZip(exportDir, zipFile);
-    return zipFile;
+    return { file: zipFile, cleanup };
   } catch (error) {
-    fs.rmSync(exportDir, { recursive: true, force: true });
+    cleanup();
     throw error;
   }
 }
@@ -691,21 +829,30 @@ function sendImage(response, image) {
   response.end(image.bytes);
 }
 
-function sendZip(response, zipFile) {
-  const cleanup = () => fs.rmSync(path.dirname(zipFile), { recursive: true, force: true });
-  const stream = fs.createReadStream(zipFile);
+function sendAttachment(response, attachment) {
+  response.writeHead(200, {
+    "Content-Type": attachment.mime_type,
+    "Content-Length": attachment.bytes.length,
+    "Cache-Control": "private, max-age=3600",
+    "X-Content-Type-Options": "nosniff"
+  });
+  response.end(attachment.bytes);
+}
+
+function sendZip(response, archive) {
+  const stream = fs.createReadStream(archive.file);
   response.writeHead(200, {
     "Content-Type": "application/zip",
-    "Content-Length": fs.statSync(zipFile).size,
+    "Content-Length": fs.statSync(archive.file).size,
     "Content-Disposition": 'attachment; filename="archivio-note.zip"',
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff"
   });
   stream.on("error", (error) => {
-    cleanup();
+    archive.cleanup();
     response.destroy(error);
   });
-  response.on("close", cleanup);
+  response.on("close", archive.cleanup);
   stream.pipe(response);
 }
 
@@ -716,7 +863,9 @@ function serveFile(response, root, requestedPath) {
   fs.createReadStream(file).pipe(response);
 }
 
+migrateStoredArchiveAttachments();
 migrateAttachmentImages();
+clearArchiveStorage();
 
 http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
@@ -782,7 +931,9 @@ http.createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname.startsWith("/media/")) {
       const [, , id, filename] = url.pathname.split("/").map(decodeURIComponent);
       const row = statements.get.get(id);
-      if (!row || !filename || !JSON.parse(row.data).attachments?.some((item) => item.filePath === filename)) return send(response, 404, "text/plain; charset=utf-8", "Not found");
+      if (!row || !isAttachmentName(filename) || !JSON.parse(row.data).attachments?.some((item) => item.filePath === filename)) return send(response, 404, "text/plain; charset=utf-8", "Not found");
+      const attachment = statements.getAttachment.get(id, filename);
+      if (attachment) return sendAttachment(response, attachment);
       return serveFile(response, row.source_dir, filename);
     }
     if (request.method !== "GET") return send(response, 405, "text/plain; charset=utf-8", "Method not allowed");
