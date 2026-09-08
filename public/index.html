@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Archivio note</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <button id="menu-button" class="icon-button" aria-label="Apri menu">☰</button>
+    <div class="brand"><span class="bulb">✦</span><span>Archivio</span></div>
+    <label class="search"><span>⌕</span><input id="search" type="search" placeholder="Cerca nelle note" autocomplete="off"><kbd>Esc</kbd></label>
+    <button id="new-note" class="new-note">＋ Nota</button>
+    <button id="view-button" class="icon-button" aria-label="Cambia visualizzazione">▦</button>
+  </header>
+  <aside id="sidebar">
+    <nav>
+      <button class="nav-item active" data-filter="notes"><span>💡</span> Note</button>
+      <div class="note-submenu">
+        <button class="nav-subitem" data-section="pinned">Fissate</button>
+        <button class="nav-subitem" data-section="others">Altre note</button>
+      </div>
+      <button class="nav-item" data-filter="reminders"><span>🔔</span> Promemoria</button>
+      <div class="nav-heading">ETICHETTE</div>
+      <div id="label-list"></div>
+      <button class="nav-item" data-filter="archived"><span>▣</span> Archivio</button>
+      <button class="nav-item" data-filter="trash"><span>♲</span> Cestino</button>
+      <div class="nav-heading">STRUMENTI</div>
+      <button id="data-button" class="nav-item"><span>⇆</span> Importa / esporta</button>
+      <label class="column-setting" for="column-count">
+        <span>▦ Colonne</span>
+        <select id="column-count" aria-label="Numero massimo di colonne">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+        </select>
+      </label>
+    </nav>
+  </aside>
+  <main>
+    <div id="summary"></div>
+    <section id="notes" class="notes grid" aria-live="polite"></section>
+    <div id="empty" hidden>Nessuna nota corrisponde alla ricerca.</div>
+  </main>
+  <dialog id="note-dialog">
+    <button id="close-dialog" class="dialog-close" aria-label="Chiudi">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 5.71 16.89 4.29 12 9.17 7.11 4.29 5.7 5.71l4.89 4.88-4.89 4.89 1.41 1.42L12 12l4.89 4.9 1.41-1.42-4.89-4.89z"/></svg>
+    </button>
+    <article id="detail"></article>
+  </dialog>
+  <dialog id="editor-dialog">
+    <form id="note-form">
+      <header><strong id="editor-title">Nuova nota</strong><button type="button" id="close-editor" class="editor-close" aria-label="Chiudi">×</button></header>
+      <input id="note-title" name="title" placeholder="Titolo" autocomplete="off">
+      <div class="editor-toolbar" role="toolbar" aria-label="Formattazione testo">
+        <select id="block-style" aria-label="Stile del testo">
+          <option value="P">Testo</option>
+          <option value="H2">Titolo</option>
+          <option value="H3">Sottotitolo</option>
+          <option value="BLOCKQUOTE">Citazione</option>
+        </select>
+        <button type="button" data-command="bold" title="Grassetto"><strong>B</strong></button>
+        <button type="button" data-command="italic" title="Corsivo"><em>I</em></button>
+        <button type="button" data-command="underline" title="Sottolineato"><u>U</u></button>
+        <button type="button" data-command="insertUnorderedList" title="Elenco puntato">•≡</button>
+        <button type="button" data-command="insertOrderedList" title="Elenco numerato">1≡</button>
+        <button type="button" data-command="removeFormat" title="Rimuovi formattazione">Tx</button>
+        <button type="button" id="insert-image" title="Inserisci immagine" aria-label="Inserisci immagine">🖼</button>
+      </div>
+      <div id="note-text" class="rich-editor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Scrivi una nota..."></div>
+      <input id="image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+      <label class="field-label" for="note-list">Checklist — una voce per riga; usa [x] per quelle completate</label>
+      <textarea id="note-list" name="listContent" placeholder="[ ] Da fare&#10;[x] Fatto"></textarea>
+      <label class="field-label" for="note-labels">Etichette — separate da virgole</label>
+      <input id="note-labels" name="labels" placeholder="es. Lavoro, Idee">
+      <div class="editor-options">
+        <label>Colore <select id="note-color" name="color"></select></label>
+        <label><input id="note-pinned" name="isPinned" type="checkbox"> Fissa</label>
+        <label><input id="note-archived" name="isArchived" type="checkbox"> Archivia</label>
+      </div>
+      <footer><span id="save-error" role="alert"></span><button class="save-note" type="submit">Salva</button></footer>
+    </form>
+  </dialog>
+  <dialog id="data-dialog">
+    <form id="data-form">
+      <header><strong>Importa ed esporta</strong><button type="button" id="close-data" class="editor-close" aria-label="Chiudi">×</button></header>
+      <p>I dati operativi sono salvati nel database SQLite locale <code>App/keep.sqlite</code>.</p>
+      <label class="field-label" for="import-folder">Cartella da importare</label>
+      <div class="folder-action"><input id="import-folder" placeholder="../Keep" autocomplete="off"><button type="button" id="import-button">Importa</button></div>
+      <label class="field-label" for="export-folder">Cartella di esportazione</label>
+      <div class="folder-action"><input id="export-folder" placeholder="../Keep-esportato" autocomplete="off"><button type="button" id="export-button">Esporta</button></div>
+      <p id="data-status" class="data-status" role="status"></p>
+    </form>
+  </dialog>
+  <div id="context-menu" role="menu" hidden></div>
+  <template id="note-template">
+    <article class="note" tabindex="0">
+      <div class="note-content"></div>
+      <div class="note-footer"><span class="labels"></span><time></time></div>
+    </article>
+  </template>
+  <script src="/app.js"></script>
+</body>
+</html>

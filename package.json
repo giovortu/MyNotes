@@ -1,0 +1,9 @@
+{
+  "name": "keep-takeout-viewer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local Google Keep Takeout viewer",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

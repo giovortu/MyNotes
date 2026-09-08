@@ -1,0 +1,11 @@
+services:
+  archivio-note:
+    build: .
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      - ../Keep:/keep:ro
+      - archivio-note-data:/data
+
+volumes:
+  archivio-note-data:
