@@ -2,7 +2,7 @@ services:
   archivio-note:
     build: .
     ports:
-      - "${PORT:-3000}:3000"
+      - "${PORT:-3001}:3001"
     volumes:
       - ../Keep:/keep:ro
       - archivio-note-data:/data
