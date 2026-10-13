@@ -7,6 +7,10 @@ let editorSelection = null;
 let pendingImages = new Map();
 let pendingImageNumber = 0;
 let draggedEditorImage = null;
+const icons = {
+  edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>'
+};
 const colors = { RED: "#f28b82", ORANGE: "#fbbc04", YELLOW: "#fff475", GREEN: "#ccff90", TEAL: "#a7ffeb", BLUE: "#cbf0f8", DARK_BLUE: "#aecbfa", PURPLE: "#d7aefb", PINK: "#fdcfe8", BROWN: "#e6c9a8", GRAY: "#e8eaed", DEFAULT: "#fff" };
 const elements = {
   notes: document.querySelector("#notes"), empty: document.querySelector("#empty"),
@@ -309,12 +313,28 @@ async function moveNote(draggedId, targetId, isPinned, position) {
 function openNote(note) {
   elements.detail.style.backgroundColor = colors[note.color] || colors.DEFAULT;
   const trashLabel = note.isTrashed ? "Elimina definitivamente" : "Sposta nel cestino";
-  elements.detail.innerHTML = `${cardBody(note, true)}<footer>${note.labels.map((label) => `<em>${escapeHtml(label)}</em>`).join("")}<span>Modificata ${date(note.editedAt)}</span><button class="edit-note">Modifica</button><button class="edit-note trash-note">${trashLabel}</button></footer>`;
-  elements.detail.querySelector(".edit-note").addEventListener("click", () => {
+  const actionButtons = `
+    <button type="button" class="edit-note" data-action="edit" title="Modifica" aria-label="Modifica">${icons.edit}</button>
+    <button type="button" class="edit-note trash-note" data-action="trash" title="${trashLabel}" aria-label="${trashLabel}">${icons.trash}</button>`;
+  elements.detail.innerHTML = `
+    <div class="detail-actions">
+      ${actionButtons}
+    </div>
+    ${cardBody(note, true)}
+    <footer>
+      ${note.labels.map((label) => `<em>${escapeHtml(label)}</em>`).join("")}
+      <span>Modificata ${date(note.editedAt)}</span>
+      <div class="detail-footer-actions">
+        ${actionButtons}
+      </div>
+    </footer>`;
+
+  const handleEdit = () => {
     elements.dialog.close();
     openEditor(note);
-  });
-  elements.detail.querySelector(".trash-note").addEventListener("click", () => {
+  };
+
+  const handleTrash = () => {
     if (note.isTrashed) {
       openConfirmation({
         title: "Eliminare definitivamente?",
@@ -329,7 +349,10 @@ function openNote(note) {
     }
     elements.dialog.close();
     updateNote(note, { isTrashed: true }).catch(() => showError("Impossibile spostare la nota nel cestino."));
-  });
+  };
+
+  elements.detail.querySelectorAll('[data-action="edit"]').forEach((button) => button.addEventListener("click", handleEdit));
+  elements.detail.querySelectorAll('[data-action="trash"]').forEach((button) => button.addEventListener("click", handleTrash));
   elements.dialog.showModal();
 }
 

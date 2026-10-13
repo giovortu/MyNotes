@@ -175,10 +175,17 @@ em { border: 0; border-radius: 7px; background: #ffffff99; padding: 3px 8px; }
 #empty { padding: 40px; border-radius: 18px; background: #fff; max-width: 430px; box-shadow: 0 8px 22px #29273c10; }
 dialog { border-radius: 20px; box-shadow: 0 20px 60px #12111f66; }
 #detail { padding: 34px 30px 14px; }
-#detail .attachment { width: calc(100% + 60px); margin: -34px -30px 22px; }
+#detail .attachment { width: calc(100% + 60px); margin: 0 -30px 22px; }
 .dialog-close { position: absolute; top: 12px; right: 12px; margin: 0; background: #292735e6; color: #fff; }
+.detail-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-right: 24px; min-height: 32px; margin: -16px 0 14px; }
+.detail-actions button, .detail-footer-actions button { width: 32px; height: 32px; border-radius: 50%; border: 0; background: transparent; cursor: pointer; display: grid; place-items: center; padding: 0; color: #6046cc; transition: background-color .15s; }
+.detail-actions button:hover, .detail-footer-actions button:hover { background: #ffffff70; }
+.detail-actions button.trash-note, .detail-footer-actions button.trash-note { color: #b3261e; }
+.detail-actions button svg, .detail-footer-actions button svg { width: 19px; height: 19px; fill: currentColor; display: block; }
+.detail-footer-actions { display: flex; align-items: center; gap: 8px; }
 .links a { border: 0; border-radius: 10px; background: #ffffff88; }
 .edit-note { color: #6046cc; }
+.trash-note { color: #b3261e; }
 #editor-dialog { background: #fff; }
 #data-dialog { width: min(530px, calc(100vw - 32px)); background: #fff; }
 #data-form { padding-bottom: 18px; }
