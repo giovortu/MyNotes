@@ -5,6 +5,7 @@ services:
       - "${PORT:-3000}:3000"
     volumes:
       - archivio-note-data:/data
+    restart: unless-stopped
 
 volumes:
   archivio-note-data:
