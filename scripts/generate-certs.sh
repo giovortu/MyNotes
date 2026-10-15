@@ -6,7 +6,7 @@ mkdir -p "$CERTS_DIR"
 
 echo "==> Generazione certificati SSL per MyNotes PWA..."
 
-IPS=("127.0.0.1" "0.0.0.0")
+IPS=("127.0.0.1" "0.0.0.0" "192.168.0.227")
 for ip in $(ip -o -4 addr show 2>/dev/null | awk '{print $4}' | cut -d/ -f1); do
   if [[ "$ip" != "127.0.0.1" && "$ip" != "0.0.0.0" ]]; then
     IPS+=("$ip")
@@ -56,7 +56,7 @@ echo "Generazione chiave server e CSR..."
 openssl req -new -newkey rsa:2048 -nodes \
   -keyout "$CERTS_DIR/server.key" \
   -out "$CERTS_DIR/server.csr" \
-  -subj "/CN=MyNotes Server/O=MyNotes/C=IT"
+  -subj "/CN=192.168.0.227/O=MyNotes/C=IT"
 
 EXT_FILE=$(mktemp)
 cat <<EXTEOF > "$EXT_FILE"

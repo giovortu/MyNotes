@@ -2,7 +2,7 @@ services:
   archivio-note:
     build: .
     ports:
-      - "${PORT:-3000}:3000"
+      - "${PORT:-3002}:3000"
     volumes:
       - archivio-note-data:/data
       - ./certs:/app/certs
