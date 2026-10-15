@@ -5,6 +5,7 @@ services:
       - "${PORT:-3000}:3000"
     volumes:
       - archivio-note-data:/data
+      - ./certs:/app/certs
     restart: unless-stopped
 
 volumes:

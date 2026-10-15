@@ -43,11 +43,48 @@ L'immagine installa anche le dipendenze ZIP con `npm ci`. Gli archivi vengono
 estratti temporaneamente in `/data/zip-imports`; al termine dell'importazione
 gli allegati sono salvati nel database e la cartella temporanea viene rimossa.
 
-In alternativa, dalla cartella `App`, avvia direttamente:
+In alternativa, avvia direttamente con docker compose:
 
 ```bash
 docker compose up --build
 ```
+
+## Progressive Web App (PWA) e Android Standalone
+
+L'applicazione soddisfa tutti i requisiti dello standard **Progressive Web App (PWA)** per l'installazione in modalità **standalone** su dispositivi Android:
+
+- **Web App Manifest**: configurato in `/manifest.webmanifest` e `/manifest.json` con `display: standalone`, tema cromatico, categoria e icone dedicate (standard e *maskable* a 192x192 e 512x512 per adattarsi alle forme delle icone Android).
+- **Service Worker (`sw.js`)**: gestisce il pre-caching della shell applicativa (`index.html`, `style.css`, `app.js`, icone) e supporta la navigazione e visualizzazione delle note anche offline.
+- **Scorciatoie rapide (App Shortcuts)**: pressione prolungata dell'icona sulla schermata Home per creare immediatamente una nuova nota (`/?action=new`).
+- **Layout mobile e Safe Areas**: supporto per schermi con notch e barre di navigazione Android (`env(safe-area-inset-*)`).
+- **Pulsante di installazione**: compare automaticamente nella barra laterale (**STRUMENTI** -> **Installa applicazione**) quando il browser Android intercetta l'evento di installazione.
+
+### Supporto Nativo HTTPS e Certificati SSL
+
+L'applicazione supporta nativamente il protocollo **HTTPS** sulla porta configurata (`3000` di default), includendo un listener a rilevamento automatico del protocollo:
+- Se ci si collega via **HTTPS** (`https://<ip>:3000`), la sessione è cifrata in TLS.
+- Se per sbaglio ci si collega via **HTTP** (`http://<ip>:3000`), il server effettua automaticamente un **redirect 301 a HTTPS** sulla stessa porta!
+
+I certificati si trovano nella cartella `./certs`:
+- `ca.crt` / `ca.key`: Root Certificate Authority (CA) locale.
+- `server.crt` / `server.key`: certificato del server con estensioni SAN (*Subject Alternative Names*) per `localhost`, `*.local`, `127.0.0.1` e tutti gli indirizzi IP della LAN rilevati automaticamente.
+
+#### Come generare o rigenerare i certificati
+Puoi generare nuovamente i certificati in qualsiasi momento con:
+```bash
+./scripts/generate-certs.sh
+```
+Se desideri includere un dominio personalizzato o un IP specifico:
+```bash
+EXTRA_SAN="note.mia-rete.home,192.168.1.50" ./scripts/generate-certs.sh
+```
+
+#### Installazione del certificato CA su Android (per eliminare ogni avviso di sicurezza)
+1. Apri l'app dal tuo smartphone Android: `https://<ip-del-server>:3000`.
+2. Dalla barra laterale dell'app, sotto **STRUMENTI**, tocca **🔐 Certificato CA Android** (oppure scarica direttamente `https://<ip-del-server>:3000/ca.crt`).
+3. Su Android vai in **Impostazioni** -> **Sicurezza** (o **Sicurezza e privacy**) -> **Altre impostazioni di sicurezza** -> **Installa da memoria dispositivo** (o **Installa certificato**) -> **Certificato CA**.
+4. Seleziona il file scaricato `mynotes-ca.crt` e conferma.
+5. Da questo momento Chrome su Android riconoscerà la connessione come sicura e affidabile al 100%, abilitando immediatamente la voce **Installa applicazione** per creare la PWA standalone WebAPK!
 
 ## Dati
 

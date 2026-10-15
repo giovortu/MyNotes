@@ -1,7 +1,10 @@
 const http = require("node:http");
+const https = require("node:https");
+const net = require("node:net");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { execFileSync } = require("node:child_process");
 const { pipeline } = require("node:stream/promises");
 const { Transform } = require("node:stream");
 const { DatabaseSync } = require("node:sqlite");
@@ -13,6 +16,28 @@ const defaultKeepDir = path.resolve(process.env.KEEP_DIR || path.join(appDir, ".
 const databaseFile = path.resolve(process.env.DATABASE_FILE || path.join(appDir, "keep.sqlite"));
 const port = Number(process.env.PORT) || 3000;
 const maxImageBytes = 5 * 1024 * 1024;
+const certsDir = path.resolve(process.env.CERTS_DIR || path.join(appDir, "certs"));
+const sslKeyFile = path.resolve(process.env.SSL_KEY_FILE || path.join(certsDir, "server.key"));
+const sslCertFile = path.resolve(process.env.SSL_CERT_FILE || path.join(certsDir, "server.crt"));
+const sslCaFile = path.resolve(process.env.SSL_CA_FILE || path.join(certsDir, "ca.crt"));
+
+function ensureCertificates() {
+  if (process.env.HTTPS === "false") return false;
+  if (fs.existsSync(sslKeyFile) && fs.existsSync(sslCertFile)) return true;
+  const scriptPath = path.join(appDir, "scripts/generate-certs.sh");
+  if (fs.existsSync(scriptPath)) {
+    try {
+      console.log("Certificati SSL non trovati. Generazione automatica in corso...");
+      execFileSync("bash", [scriptPath, certsDir], { stdio: "inherit", env: process.env });
+      return fs.existsSync(sslKeyFile) && fs.existsSync(sslCertFile);
+    } catch (error) {
+      console.warn("Impossibile generare automaticamente i certificati SSL:", error.message);
+    }
+  }
+  return false;
+}
+
+const httpsEnabled = ensureCertificates();
 const maxJsonBytes = 7 * 1024 * 1024;
 const maxZipBytes = 100 * 1024 * 1024;
 const maxZipExtractedBytes = 250 * 1024 * 1024;
@@ -22,11 +47,17 @@ const mimeTypes = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
+  ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
-  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".webp": "image/webp",
   ".aac": "audio/aac",
-  ".awb": "audio/amr-wb"
+  ".awb": "audio/amr-wb",
+  ".crt": "application/x-x509-ca-cert"
 };
 const colors = new Set(["DEFAULT", "RED", "ORANGE", "YELLOW", "GREEN", "TEAL", "BLUE", "DARK_BLUE", "PURPLE", "PINK", "BROWN", "GRAY"]);
 
@@ -867,9 +898,21 @@ migrateStoredArchiveAttachments();
 migrateAttachmentImages();
 clearArchiveStorage();
 
-http.createServer(async (request, response) => {
+const requestHandler = async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
   try {
+    if ((request.method === "GET" || request.method === "HEAD") && (url.pathname === "/ca.crt" || url.pathname === "/api/ca.crt")) {
+      if (fs.existsSync(sslCaFile)) {
+        response.writeHead(200, {
+          "Content-Type": "application/x-x509-ca-cert",
+          "Content-Disposition": 'attachment; filename="mynotes-ca.crt"',
+          "Cache-Control": "no-cache"
+        });
+        if (request.method === "HEAD") return response.end();
+        return fs.createReadStream(sslCaFile).pipe(response);
+      }
+      return send(response, 404, "text/plain; charset=utf-8", "CA certificate not found");
+    }
     if (request.method === "GET" && url.pathname === "/api/notes") return sendJson(response, 200, loadNotes());
     if (request.method === "GET" && url.pathname === "/api/order") return sendJson(response, 200, loadOrder());
     if (request.method === "GET" && url.pathname === "/api/status") return sendJson(response, 200, { notes: statements.count.get().count, setupCompleted: setupCompleted() });
@@ -936,12 +979,83 @@ http.createServer(async (request, response) => {
       if (attachment) return sendAttachment(response, attachment);
       return serveFile(response, row.source_dir, filename);
     }
-    if (request.method !== "GET") return send(response, 405, "text/plain; charset=utf-8", "Method not allowed");
+    if ((request.method === "GET" || request.method === "HEAD") && (url.pathname === "/manifest.json" || url.pathname === "/manifest.webmanifest")) {
+      const manifestFile = path.join(appDir, "public", "manifest.json");
+      if (fs.existsSync(manifestFile)) {
+        response.writeHead(200, {
+          "Content-Type": "application/manifest+json; charset=utf-8",
+          "Access-Control-Allow-Origin": "*",
+          "Cache-Control": "public, max-age=0, must-revalidate"
+        });
+        if (request.method === "HEAD") return response.end();
+        return fs.createReadStream(manifestFile).pipe(response);
+      }
+      return send(response, 404, "text/plain; charset=utf-8", "Manifest not found");
+    }
+    if (request.method !== "GET" && request.method !== "HEAD") return send(response, 405, "text/plain; charset=utf-8", "Method not allowed");
     const staticPath = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
-    if (staticPath.includes("/") || !["index.html", "app.js", "style.css"].includes(staticPath)) return send(response, 404, "text/plain; charset=utf-8", "Not found");
-    serveFile(response, path.join(appDir, "public"), staticPath);
+    const publicDir = path.join(appDir, "public");
+    const resolvedFile = path.resolve(publicDir, staticPath);
+    if (!resolvedFile.startsWith(publicDir) || !fs.existsSync(resolvedFile) || !fs.statSync(resolvedFile).isFile()) {
+      return send(response, 404, "text/plain; charset=utf-8", "Not found");
+    }
+    const ext = path.extname(resolvedFile).toLowerCase();
+    const isManifest = staticPath.startsWith("manifest.");
+    const contentType = isManifest ? "application/manifest+json; charset=utf-8" : (mimeTypes[ext] || "application/octet-stream");
+    const headers = {
+      "Content-Type": contentType,
+      "Access-Control-Allow-Origin": "*"
+    };
+    if (staticPath === "sw.js") {
+      headers["Service-Worker-Allowed"] = "/";
+      headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+    }
+    response.writeHead(200, headers);
+    if (request.method === "HEAD") {
+      response.end();
+      return;
+    }
+    fs.createReadStream(resolvedFile).pipe(response);
   } catch (error) {
     console.error(error);
     send(response, 400, "text/plain; charset=utf-8", error.message);
   }
-}).listen(port, "0.0.0.0", () => console.log(`Archivio note (${statements.count.get().count} note)`));
+};
+
+if (httpsEnabled) {
+  const httpsServer = https.createServer({
+    key: fs.readFileSync(sslKeyFile),
+    cert: fs.readFileSync(sslCertFile)
+  }, requestHandler);
+
+  const httpServer = http.createServer((request, response) => {
+    const host = request.headers.host || `localhost:${port}`;
+    response.writeHead(301, {
+      Location: `https://${host}${request.url}`,
+      "Content-Type": "text/html; charset=utf-8"
+    });
+    response.end(`Redirecting to <a href="https://${host}${request.url}">https://${host}${request.url}</a>`);
+  });
+
+  const server = net.createServer((socket) => {
+    socket.once("data", (buffer) => {
+      socket.pause();
+      socket.unshift(buffer);
+      if (buffer[0] === 22) { // 0x16 is TLS Handshake
+        httpsServer.emit("connection", socket);
+      } else {
+        httpServer.emit("connection", socket);
+      }
+      process.nextTick(() => socket.resume());
+    });
+    socket.on("error", () => {});
+  });
+
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`Archivio note (${statements.count.get().count} note) [HTTPS su porta ${port}, auto-redirect da HTTP abilitato]`);
+  });
+} else {
+  http.createServer(requestHandler).listen(port, "0.0.0.0", () => {
+    console.log(`Archivio note (${statements.count.get().count} note) [HTTP su porta ${port}]`);
+  });
+}

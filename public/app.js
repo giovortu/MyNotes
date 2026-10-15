@@ -499,17 +499,32 @@ async function uploadPendingImages(noteId) {
 function renderLabels() {
   const labels = [...new Set(state.notes.flatMap((note) => note.labels))].sort((a, b) => a.localeCompare(b, "it"));
   elements.labels.innerHTML = labels.map((label) => `<button class="nav-item" data-label="${escapeHtml(label)}"><span>🏷</span>${escapeHtml(label)}</button>`).join("");
-  elements.labels.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => { state.label = button.dataset.label; state.filter = "notes"; render(); }));
+  elements.labels.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
+    state.label = button.dataset.label;
+    state.filter = "notes";
+    closeMobileSidebar();
+    render();
+  }));
+}
+
+function closeMobileSidebar() {
+  if (window.innerWidth <= 700) {
+    document.body.classList.remove("sidebar-hidden");
+  }
 }
 
 document.querySelector("nav").addEventListener("click", (event) => {
   const button = event.target.closest("[data-filter]");
   if (!button) return;
-  state.filter = button.dataset.filter; state.label = ""; render();
+  state.filter = button.dataset.filter;
+  state.label = "";
+  closeMobileSidebar();
+  render();
 });
 document.querySelectorAll("[data-section]").forEach((button) => button.addEventListener("click", () => {
   state.filter = "notes";
   state.label = "";
+  closeMobileSidebar();
   render();
   const section = document.querySelector(`#${button.dataset.section}`);
   (section || elements.notes).scrollIntoView({ behavior: "smooth", block: "start" });
@@ -705,4 +720,52 @@ document.querySelector("#reset-database").addEventListener("click", () => {
   });
 });
 
-loadData().catch((error) => { elements.empty.hidden = false; elements.empty.textContent = error.message; });
+loadData()
+  .then(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("action") === "new") {
+      openEditor();
+    }
+  })
+  .catch((error) => {
+    elements.empty.hidden = false;
+    elements.empty.textContent = error.message;
+  });
+
+// PWA Service Worker Registration
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((error) => {
+      console.warn("Registrazione ServiceWorker fallita:", error);
+    });
+  });
+}
+
+// PWA Android Install Prompt
+let deferredInstallPrompt = null;
+const installButton = document.querySelector("#install-button");
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  if (installButton) {
+    installButton.hidden = false;
+  }
+});
+
+if (installButton) {
+  installButton.addEventListener("click", async () => {
+    if (!deferredInstallPrompt) return;
+    installButton.hidden = true;
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+  });
+}
+
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  if (installButton) {
+    installButton.hidden = true;
+  }
+});

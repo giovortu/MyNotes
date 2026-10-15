@@ -2,8 +2,18 @@
 <html lang="it">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Archivio note</title>
+  <meta name="description" content="Visualizzatore e gestore note personale compatibile con Google Keep">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Archivio note">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -27,6 +37,8 @@
       <button class="nav-item" data-filter="archived"><span>▣</span> Archivio</button>
       <button class="nav-item" data-filter="trash"><span>♲</span> Cestino</button>
       <div class="nav-heading">STRUMENTI</div>
+      <button id="install-button" class="nav-item" hidden><span>📥</span> Installa applicazione</button>
+      <a href="/ca.crt" download="mynotes-ca.crt" class="nav-item"><span>🔐</span> Certificato CA Android</a>
       <button id="data-button" class="nav-item"><span>⇆</span> Importa / esporta</button>
       <label class="column-setting" for="column-count">
         <span>▦ Colonne</span>

@@ -1,8 +1,18 @@
-:root { --max-columns: 5; color: #202124; font: 14px/1.45 Arial, sans-serif; background: #fff; }
-* { box-sizing: border-box; }
-body { margin: 0; }
+:root {
+  --max-columns: 5;
+  color: #202124;
+  font: 14px/1.45 Arial, sans-serif;
+  background: #fff;
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body { margin: 0; overscroll-behavior-y: contain; }
 button, input { font: inherit; color: inherit; }
-header { height: 64px; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; gap: 16px; padding: 0 18px; position: sticky; top: 0; background: #fff; z-index: 2; }
+button { touch-action: manipulation; }
+header { height: calc(64px + var(--safe-area-top)); padding-top: var(--safe-area-top); border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; gap: 16px; padding-left: calc(18px + var(--safe-area-left)); padding-right: calc(18px + var(--safe-area-right)); position: sticky; top: 0; background: #fff; z-index: 2; }
 .icon-button { border: 0; background: transparent; cursor: pointer; font-size: 25px; width: 40px; height: 40px; border-radius: 50%; }
 .icon-button:hover, .nav-item:hover { background: #f1f3f4; }
 .brand { display: flex; gap: 8px; align-items: center; font-size: 22px; color: #5f6368; min-width: 180px; }
@@ -11,8 +21,8 @@ header { height: 64px; border-bottom: 1px solid #e0e0e0; display: flex; align-it
 .search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; font-size: 16px; }
 .new-note, .save-note { border: 0; border-radius: 4px; background: #1a73e8; color: #fff; cursor: pointer; padding: 9px 14px; font-weight: bold; white-space: nowrap; }
 kbd { font-size: 11px; color: #777; }
-aside { position: fixed; top: 64px; bottom: 0; width: 280px; padding-top: 8px; background: #fff; z-index: 1; transition: transform .2s; overflow-y: auto; }
-.nav-item { display: flex; align-items: center; gap: 22px; border: 0; width: 100%; background: transparent; cursor: pointer; height: 48px; padding: 0 26px; text-align: left; border-radius: 0 25px 25px 0; }
+aside { position: fixed; top: calc(64px + var(--safe-area-top)); bottom: 0; width: 280px; padding-top: 8px; padding-bottom: var(--safe-area-bottom); padding-left: var(--safe-area-left); background: #fff; z-index: 1; transition: transform .2s; overflow-y: auto; }
+.nav-item { display: flex; align-items: center; gap: 22px; border: 0; width: 100%; background: transparent; cursor: pointer; height: 48px; padding: 0 26px; text-align: left; border-radius: 0 25px 25px 0; color: inherit; text-decoration: none; }
 .nav-item.active { background: #feefc3; font-weight: bold; }
 .nav-heading { color: #5f6368; font-size: 11px; font-weight: bold; letter-spacing: .8px; margin: 20px 26px 5px; }
 .note-submenu { margin: 0 0 5px 48px; }
@@ -219,15 +229,15 @@ dialog { border-radius: 20px; box-shadow: 0 20px 60px #12111f66; }
 #context-menu > button:hover, .color-choice:hover, .color-choice.selected { background: #f0edff; }
 .color-choice.selected { border-color: #7657ff; }
 @media (max-width: 700px) {
-  header { height: 64px; gap: 6px; padding: 0 10px; }
+  header { height: calc(64px + var(--safe-area-top)); gap: 6px; padding-left: calc(10px + var(--safe-area-left)); padding-right: calc(10px + var(--safe-area-right)); }
   .brand, #view-button { display: none; }
   .icon-button { width: 36px; min-width: 36px; height: 36px; }
   .search { min-width: 0; height: 42px; padding: 0 11px; border-radius: 11px; }
   .search input { min-width: 0; font-size: 15px; }
   .new-note { padding: 9px 10px; font-size: 12px; }
-  aside { top: 64px; transform: translateX(-100%); }
+  aside { top: calc(64px + var(--safe-area-top)); transform: translateX(-100%); }
   .sidebar-hidden aside { transform: translateX(0); box-shadow: 3px 0 14px #0004; }
-  main { margin-left: 0; padding: 28px 16px; }
+  main { margin-left: 0; padding: 28px 16px; padding-bottom: calc(28px + var(--safe-area-bottom)); }
   .notes.grid .note { flex-basis: calc((100% - 8px) / 2); }
   .notes.grid[data-columns="1"] .note { flex-basis: 100%; }
   .note { border-radius: 14px; }

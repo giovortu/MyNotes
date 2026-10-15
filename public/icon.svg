@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <linearGradient id="note" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f8fafc"/>
+    </linearGradient>
+    <linearGradient id="star" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="125%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#0f172a" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <!-- Background with rounded corners -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  
+  <!-- Note card -->
+  <g filter="url(#shadow)">
+    <rect x="110" y="96" width="292" height="320" rx="24" fill="url(#note)"/>
+    <!-- Folded top corner or accent line -->
+    <rect x="150" y="150" width="120" height="20" rx="10" fill="#cbd5e1"/>
+    <rect x="150" y="196" width="212" height="14" rx="7" fill="#e2e8f0"/>
+    <rect x="150" y="226" width="180" height="14" rx="7" fill="#e2e8f0"/>
+    <rect x="150" y="256" width="150" height="14" rx="7" fill="#e2e8f0"/>
+  </g>
+  
+  <!-- Sparkle / Star ✦ symbol in amber gold -->
+  <g filter="url(#shadow)">
+    <!-- 4-point sparkle star -->
+    <path d="M 330 320 Q 330 260 300 260 Q 330 260 330 200 Q 330 260 360 260 Q 330 260 330 320 Z" fill="url(#star)" transform="translate(10, 50) scale(1.1)"/>
+    <circle cx="373" cy="336" r="42" fill="url(#star)"/>
+    <path d="M373 304 C373 322 360 336 342 336 C360 336 373 350 373 368 C373 350 386 336 404 336 C386 336 373 322 373 304 Z" fill="#ffffff"/>
+  </g>
+</svg>
